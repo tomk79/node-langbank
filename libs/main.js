@@ -34,8 +34,17 @@ module.exports = function(){
 	 * get word by key
 	 */
 	this.get = function(key){
-		if( !_this.langDb[key] ){ return false; }
-		return _this.langDb[key][_this.lang];
+		if( !_this.langDb[key] ){
+			return '---';
+		}
+		var lang = _this.lang;
+		if( !_this.langDb[key][lang].length ){
+			lang = _this.defaultLang;
+		}
+		if( !_this.langDb[key][lang].length ){
+			return '---';
+		}
+		return _this.langDb[key][lang];
 	}
 
 	/**
