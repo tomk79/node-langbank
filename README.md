@@ -14,6 +14,18 @@ var lb = new LangBank('/path/to/list.csv', function(){
 	lb.setLang('en');
 	console.log( lb.get('hello') ); // <- "Hello"
 });
+
+
+// initialize with options
+var LangBank = require('langbank');
+var lb = new LangBank(
+	'/path/to/list.csv',
+	{},
+	function(){
+		lb.setLang('en');
+		console.log( lb.get('hello') ); // <- "Hello"
+	}
+);
 ```
 
 list.csv

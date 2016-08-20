@@ -1,14 +1,23 @@
 /**
  * langbank.js
  */
-module.exports = function( pathCsv, callback ){
+module.exports = function(){
 	var csv = require('csv');
 	var fs = require('fs');
 	var Promise = require("es6-promise").Promise;
-	callback = callback || function(){};
 
 	var _this = this;
-	this.pathCsv = pathCsv;
+	this.options = {};
+	this.pathCsv = arguments[0];
+	if(arguments.length == 2){
+		callback = arguments[arguments.length-1] || function(){};
+	}else if(arguments.length == 3){
+		this.options = arguments[1];
+		callback = arguments[arguments.length-1] || function(){};
+	}else{
+		callback = function(){};
+	}
+
 	this.langDb = {};
 	this.defaultLang = null;
 	this.lang = null;
