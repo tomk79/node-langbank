@@ -5,6 +5,7 @@ module.exports = function(){
 	var csv = require('csv');
 	var fs = require('fs');
 	var Promise = require("es6-promise").Promise;
+	var ejs = require('ejs');
 
 	var _this = this;
 	this.options = {};
@@ -44,7 +45,11 @@ module.exports = function(){
 		if( !_this.langDb[key][lang].length ){
 			return '---';
 		}
-		return _this.langDb[key][lang];
+		var rtn = _this.langDb[key][lang];
+		var data = _this.options.bind || {};
+		data._ENV = this;
+		rtn = ejs.render(rtn, data, {});
+		return rtn;
 	}
 
 	/**

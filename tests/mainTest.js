@@ -44,17 +44,28 @@ describe('main Test', function() {
 
 		var lb = new LangBank(
 			__dirname+'/testdata/list.csv',
-			{},
+			{
+				"bind":{
+					"test1": "bind test 1",
+					"test2": "bind test 2"
+				}
+			},
 			function(){
 
 				lb.setLang("en");
-				assert.equal(lb.get('hello'), 'Hello');
+				assert.strictEqual(lb.get('hello'), 'Hello');
 
 				lb.setLang("ja");
-				assert.equal(lb.get('hello'), 'こんにちわ');
+				assert.strictEqual(lb.get('hello'), 'こんにちわ');
 
-				assert.equal(lb.getList().hello.ja, 'こんにちわ');
-				assert.equal(lb.getList().hello.en, 'Hello');
+				assert.strictEqual(lb.getList().hello.ja, 'こんにちわ');
+				assert.strictEqual(lb.getList().hello.en, 'Hello');
+
+				// bind test
+				assert.strictEqual(lb.get('bind1'), 'test bind test 1');
+				assert.strictEqual(lb.get('bind2'), 'ja');
+				assert.strictEqual(lb.get('bind3'), 'en');
+				assert.strictEqual(lb.get('bind4'), 'こんにちわ');
 
 				done();
 			}

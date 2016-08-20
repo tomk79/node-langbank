@@ -4,3 +4,7 @@
 "no-ja1","NoJa1","",""
 "no-ja2","NoJa2",,
 "no-en1",,,
+"bind1","test <%= test1 %>",,
+"bind2","<%= _ENV.lang %>",,
+"bind3","<%= _ENV.defaultLang %>",,
+"bind4","<%= _ENV.get('hello') %>",,
