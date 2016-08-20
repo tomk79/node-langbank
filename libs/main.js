@@ -60,8 +60,14 @@ module.exports = function(){
 	}
 
 	_this.langDb = {};
+	var csvSrc = '';
+	try {
+		csvSrc = fs.readFileSync(_this.pathCsv);
+	} catch (e) {
+		csvSrc = _this.pathCsv;
+	}
 	csv.parse(
-		fs.readFileSync(_this.pathCsv),
+		csvSrc,
 		function(err, csvAry){
 			var langIdx=[];
 

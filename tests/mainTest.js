@@ -73,4 +73,26 @@ describe('main Test', function() {
 
 	});
 
+	it("as CSV code", function(done) {
+		this.timeout(60*1000);
+
+		var lb = new LangBank(
+			'"","en","ja","anylang"'+"\n"+'"goodmorning","Good Morning!","おはよう！","good morning in anylang"'+"\n"+'"helloworld","Hello World","こんにちわ世界","helloworld in anylang"',
+			function(){
+
+				lb.setLang("en");
+				assert.strictEqual(lb.get('helloworld'), 'Hello World');
+
+				lb.setLang("ja");
+				assert.strictEqual(lb.get('helloworld'), 'こんにちわ世界');
+
+				assert.strictEqual(lb.getList().helloworld.ja, 'こんにちわ世界');
+				assert.strictEqual(lb.getList().helloworld.en, 'Hello World');
+
+				done();
+			}
+		);
+
+	});
+
 });
