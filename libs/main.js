@@ -1,14 +1,24 @@
 /**
  * langbank.js
  */
-module.exports = function( pathCsv, callback ){
+module.exports = function(){
 	var csv = require('csv');
 	var fs = require('fs');
 	var Promise = require("es6-promise").Promise;
-	callback = callback || function(){};
+	var ejs = require('ejs');
 
 	var _this = this;
-	this.pathCsv = pathCsv;
+	this.options = {};
+	this.pathCsv = arguments[0];
+	if(arguments.length == 2){
+		callback = arguments[arguments.length-1] || function(){};
+	}else if(arguments.length == 3){
+		this.options = arguments[1];
+		callback = arguments[arguments.length-1] || function(){};
+	}else{
+		callback = function(){};
+	}
+
 	this.langDb = {};
 	this.defaultLang = null;
 	this.lang = null;
@@ -25,8 +35,21 @@ module.exports = function( pathCsv, callback ){
 	 * get word by key
 	 */
 	this.get = function(key){
-		if( !_this.langDb[key] ){ return false; }
-		return _this.langDb[key][_this.lang];
+		if( !_this.langDb[key] ){
+			return '---';
+		}
+		var lang = _this.lang;
+		if( !_this.langDb[key][lang].length ){
+			lang = _this.defaultLang;
+		}
+		if( !_this.langDb[key][lang].length ){
+			return '---';
+		}
+		var rtn = _this.langDb[key][lang];
+		var data = _this.options.bind || {};
+		data._ENV = this;
+		rtn = ejs.render(rtn, data, {});
+		return rtn;
 	}
 
 	/**
@@ -37,8 +60,14 @@ module.exports = function( pathCsv, callback ){
 	}
 
 	_this.langDb = {};
+	var csvSrc = '';
+	try {
+		csvSrc = fs.readFileSync(_this.pathCsv);
+	} catch (e) {
+		csvSrc = _this.pathCsv;
+	}
 	csv.parse(
-		fs.readFileSync(_this.pathCsv),
+		csvSrc,
 		function(err, csvAry){
 			var langIdx=[];
 
