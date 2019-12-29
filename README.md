@@ -77,9 +77,9 @@ list.csv
 
 ## Change Log
 
-### langbank@0.0.4 (リリース日未定)
+### langbank@0.0.4 (2019-12-30)
 
-- Twig 3.0 系に対応。
+- PHP版が、Twig 3.0 系に対応。
 
 ### langbank@0.0.3 (2018-05-24)
 
