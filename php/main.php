@@ -82,12 +82,26 @@ class LangBank{
 		$data = (@$this->options['bind'] ? $this->options['bind'] : array());
 		$data['_ENV'] = $this;
 
+
 		// PHP版は、ejs ではなく twig に対応
-		$loader = new \Twig_Loader_Array(array(
-			'index' => $rtn,
-		));
-		$twig = new \Twig_Environment($loader);
-		$rtn = $twig->render('index', $data);
+		if( class_exists('\\Twig_Loader_Array') ){
+			// Twig ^1.35.3
+			$loader = new \Twig_Loader_Array(array(
+				'index' => $rtn,
+			));
+			$twig = new \Twig_Environment($loader);
+			$rtn = $twig->render('index', $data);
+
+		}elseif( class_exists('\\Twig\\Loader\\ArrayLoader') ){
+			// Twig ^3.0.0
+			$loader = new \Twig\Loader\ArrayLoader([
+				'index' => $rtn,
+			]);
+			$twig = new \Twig\Environment($loader);
+			$rtn = $twig->render('index', $data);
+
+		}
+
 		return $rtn;
 	}
 

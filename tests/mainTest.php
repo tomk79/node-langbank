@@ -82,7 +82,7 @@ class mainTest extends PHPUnit_Framework_TestCase{
 	 */
 	public function testAsCsvCode(){
 		// ※PHP版は、ファイルからの読み込みのみに対応
-		$lb = new tomk79\LangBank( '"","en","ja","anylang"'+"\n"+'"goodmorning","Good Morning!","おはよう！","good morning in anylang"'+"\n"+'"helloworld","Hello World","こんにちわ世界","helloworld in anylang"' );
+		// $lb = new tomk79\LangBank( '"","en","ja","anylang"'+"\n"+'"goodmorning","Good Morning!","おはよう！","good morning in anylang"'+"\n"+'"helloworld","Hello World","こんにちわ世界","helloworld in anylang"' );
 
 		// $lb->setLang("en");
 		// $this->assertSame($lb->get('helloworld'), 'Hello World');

@@ -77,6 +77,10 @@ list.csv
 
 ## Change Log
 
+### langbank@0.0.4 (リリース日未定)
+
+- Twig 3.0 系に対応。
+
 ### langbank@0.0.3 (2018-05-24)
 
 - 実験的に、PHP版を追加。
@@ -100,5 +104,5 @@ MIT License
 ## Author
 
 - Tomoya Koyanagi <tomk79@gmail.com>
-- website: <http://www.pxt.jp/>
-- Twitter: @tomk79 <http://twitter.com/tomk79/>
+- website: <https://www.pxt.jp/>
+- Twitter: @tomk79 <https://twitter.com/tomk79/>
