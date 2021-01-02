@@ -2,11 +2,22 @@
 
 ## Install
 
+NodeJS:
+
 ```
-$ npm install --save langbank
+$ npm install --save langbank;
 ```
 
+PHP:
+
+```
+$ composer require tomk79/langbank;
+```
+
+
 ## Basic Usage
+
+NodeJS:
 
 ```js
 var LangBank = require('langbank');
@@ -16,7 +27,17 @@ var lb = new LangBank('/path/to/list.csv', function(){
 });
 ```
 
-list.csv
+PHP:
+
+```php
+require_once('/path/to/vendor/autoload.php');
+$lb = new tomk79\LangBank('/path/to/list.csv');
+$lb->setLang( 'en' );
+$lb->get('hello'); // <- "Hello"
+```
+
+list.csv:
+
 ```csv
 "","en","ja","anylang"
 "goodmorning","Good Morning!","おはよう！","good morning in anylang"
@@ -26,9 +47,11 @@ list.csv
 Using 2nd column as Default Language.
 
 
-### Using EJS
+### Using EJS (NodeJS)
 
 You can use "EJS" template.
+
+NodeJS:
 
 ```js
 var LangBank = require('langbank');
@@ -46,15 +69,18 @@ var lb = new LangBank(
 );
 ```
 
-list.csv
+list.csv:
+
 ```csv
 "","en"
 "goodmorning","Good <%= sample %>!"
 ```
 
-#### \_ENV in EJS
+#### \_ENV in EJS (NodeJS)
 
 langbank object is accessable in "EJS" template as `_ENV` .
+
+NodeJS:
 
 ```js
 var LangBank = require('langbank');
@@ -67,7 +93,8 @@ var lb = new LangBank(
 );
 ```
 
-list.csv
+list.csv:
+
 ```csv
 "","en"
 "morning","Morning"
@@ -75,7 +102,31 @@ list.csv
 ```
 
 
+### Using Twig (PHP)
+
+list.csv:
+
+```csv
+"","en"
+"goodmorning","Good {{ sample }}!"
+```
+
+#### \_ENV in Twig (PHP)
+
+list.csv:
+
+```csv
+"","en"
+"morning","Morning"
+"goodmorning","Good {{ _ENV.get('morning') }}!"
+```
+
+
 ## Change Log
+
+### langbank@0.0.5 (リリース日未定)
+
+- `getLang()` メソッドを追加。
 
 ### langbank@0.0.4 (2019-12-30)
 

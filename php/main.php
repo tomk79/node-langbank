@@ -65,10 +65,17 @@ class LangBank{
 	}
 
 	/**
+	 * get Language
+	 */
+	public function getLang(){
+		return $this->lang;
+	}
+
+	/**
 	 * get word by key
 	 */
 	public function get($key){
-		if( !@$this->langDb[$key] ){
+		if( !array_key_exists($key, $this->langDb) || !$this->langDb[$key] ){
 			return '---';
 		}
 		$lang = $this->lang;

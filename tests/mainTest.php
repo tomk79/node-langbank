@@ -20,6 +20,7 @@ class mainTest extends PHPUnit_Framework_TestCase{
 
 		// get(), setLang()
 		$lb->setLang("en");
+		$this->assertSame($lb->getLang(), 'en');
 		$this->assertSame($lb->get('hello'), 'Hello');
 		$this->assertSame($lb->get('no-ja1'), 'NoJa1');
 		$this->assertSame($lb->get('no-ja2'), 'NoJa2');

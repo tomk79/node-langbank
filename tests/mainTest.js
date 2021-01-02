@@ -13,6 +13,7 @@ describe('main Test', function() {
 
 			// get(), setLang()
 			lb.setLang("en");
+			assert.strictEqual(lb.getLang(), 'en');
 			assert.strictEqual(lb.get('hello'), 'Hello');
 			assert.strictEqual(lb.get('no-ja1'), 'NoJa1');
 			assert.strictEqual(lb.get('no-ja2'), 'NoJa2');

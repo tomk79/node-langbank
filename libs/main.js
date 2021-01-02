@@ -32,6 +32,13 @@ module.exports = function(){
 	}
 
 	/**
+	 * get Language
+	 */
+	this.getLang = function(){
+		return this.lang;
+	}
+
+	/**
 	 * get word by key
 	 */
 	this.get = function(key){
