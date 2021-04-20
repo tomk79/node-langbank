@@ -27,8 +27,10 @@
         "phpunit/phpunit": "^4.1.0"
     },
     "autoload": {
-        "files": [
-            "php/main.php"
-        ]
+        "psr-4": {
+            "tomk79\\": [
+                "php"
+            ]
+        }
     }
 }
