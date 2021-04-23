@@ -124,7 +124,7 @@ list.csv:
 
 ## Change Log
 
-### langbank v0.0.5 (リリース日未定)
+### langbank v0.0.5 (2021-04-23)
 
 - `getLang()` メソッドを追加。
 - 内部コードの細かい修正。
