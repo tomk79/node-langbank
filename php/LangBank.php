@@ -74,16 +74,19 @@ class LangBank{
 	/**
 	 * get word by key
 	 */
-	public function get($key){
+	public function get($key, $defaultValue = '---'){
+		if( !strlen($defaultValue) ){
+			$defaultValue = '---';
+		}
 		if( !array_key_exists($key, $this->langDb) || !$this->langDb[$key] ){
-			return '---';
+			return $defaultValue;
 		}
 		$lang = $this->lang;
 		if( !strlen($this->langDb[$key][$lang]) ){
 			$lang = $this->defaultLang;
 		}
 		if( !strlen($this->langDb[$key][$lang]) ){
-			return '---';
+			return $defaultValue;
 		}
 		$rtn = $this->langDb[$key][$lang];
 		$data = (@$this->options['bind'] ? $this->options['bind'] : array());

@@ -39,16 +39,19 @@ module.exports = function(){
 	/**
 	 * get word by key
 	 */
-	this.get = function(key){
+	this.get = function(key, defaultValue){
+		if( !defaultValue ){
+			defaultValue = '---';
+		}
 		if( !_this.langDb[key] ){
-			return '---';
+			return defaultValue;
 		}
 		var lang = _this.lang;
 		if( !_this.langDb[key][lang].length ){
 			lang = _this.defaultLang;
 		}
 		if( !_this.langDb[key][lang].length ){
-			return '---';
+			return defaultValue;
 		}
 		var rtn = _this.langDb[key][lang];
 		var data = _this.options.bind || {};

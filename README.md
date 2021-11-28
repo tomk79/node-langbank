@@ -126,6 +126,7 @@ list.csv:
 
 ### langbank v0.0.6 (リリース日未定)
 
+- `lb->get()` に、第2引数 `$defaultValue` を追加。
 - NodeJS版: 依存ライブラリの整理と更新。
 
 ### langbank v0.0.5 (2021-04-23)
