@@ -105,9 +105,9 @@ list.csv:
 
 ## Change Log
 
-### langbank v0.1.0 (リリース日未定)
+### langbank v0.1.0 (2021-11-28)
 
-- `lb->get()` に、第2引数 `$defaultValue` を追加。
+- `get()` に、第2引数 `$defaultValue` を追加。
 - NodeJS版: ejs を廃止し、 Twig に対応した。
 
 ### langbank v0.0.5 (2021-04-23)
