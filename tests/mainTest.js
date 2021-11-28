@@ -97,4 +97,17 @@ describe('main Test', function() {
 
 	});
 
+	it("null or undefined", function(done) {
+		this.timeout(60*1000);
+
+		var lb = new LangBank(
+			null,
+			function(){
+				assert.strictEqual(lb.get('helloworld', 'undefined'), 'undefined');
+				done();
+			}
+		);
+
+	});
+
 });

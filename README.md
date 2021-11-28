@@ -105,6 +105,10 @@ list.csv:
 
 ## Change Log
 
+### langbank v0.1.0 (リリース日未定)
+
+- NodeJS版: 初期化時に与えられる第1引数が `null` や `undefined` だった場合に異常終了する問題を修正。
+
 ### langbank v0.1.0 (2021-11-28)
 
 - `get()` に、第2引数 `$defaultValue` を追加。

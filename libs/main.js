@@ -81,7 +81,11 @@ module.exports = function(){
 	var csvSrc = '';
 	try {
 		var fs = require('fs');
-		csvSrc = fs.readFileSync(_this.pathCsv);
+		if( typeof(_this.pathCsv) === typeof('') && _this.pathCsv.length && fs.existsSync(_this.pathCsv) ){
+			csvSrc = fs.readFileSync(_this.pathCsv);
+		}else if( typeof(_this.pathCsv) === typeof('') ){
+			csvSrc = _this.pathCsv;
+		}
 	} catch (e) {
 		csvSrc = _this.pathCsv;
 	}

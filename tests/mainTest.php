@@ -98,4 +98,14 @@ class mainTest extends PHPUnit_Framework_TestCase{
 		// $this->assertSame($list['helloworld']['en'], 'Hello World');
 	}
 
+	/**
+	 * null or undefined
+	 */
+	public function testNull(){
+		$lb = new tomk79\LangBank(
+			null
+		);
+		$this->assertSame($lb->get('helloworld', 'undefined'), 'undefined');
+	}
+
 }
