@@ -8,7 +8,7 @@ describe('main Test', function() {
 	it("no options", function(done) {
 		this.timeout(60*1000);
 
-		var lb = new LangBank(__dirname+'/testdata/list.csv', function(){
+		var lb = new LangBank(__dirname+'/testdata/list_twig.csv', function(){
 
 			// get(), setLang()
 			lb.setLang("en");
@@ -18,6 +18,7 @@ describe('main Test', function() {
 			assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
 			assert.strictEqual(lb.get('no-en1'), '---');
 			assert.strictEqual(lb.get('undefinedKey'), '---');
+			assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
 
 			lb.setLang("ja");
 			assert.strictEqual(lb.get('hello'), 'こんにちわ');
@@ -25,6 +26,7 @@ describe('main Test', function() {
 			assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
 			assert.strictEqual(lb.get('no-en1'), '---');
 			assert.strictEqual(lb.get('undefinedKey'), '---');
+			assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
 
 			lb.setLang("anylang");
 			assert.strictEqual(lb.get('goodmorning'), 'good morning in anylang');
@@ -43,7 +45,7 @@ describe('main Test', function() {
 		this.timeout(60*1000);
 
 		var lb = new LangBank(
-			__dirname+'/testdata/list.csv',
+			__dirname+'/testdata/list_twig.csv',
 			{
 				"bind":{
 					"test1": "bind test 1",

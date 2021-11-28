@@ -26,6 +26,7 @@ class mainTest extends PHPUnit_Framework_TestCase{
 		$this->assertSame($lb->get('no-ja2'), 'NoJa2');
 		$this->assertSame($lb->get('no-en1'), '---');
 		$this->assertSame($lb->get('undefinedKey'), '---');
+		$this->assertSame($lb->get('undefinedKey', 'default value'), 'default value');
 
 		$lb->setLang("ja");
 		$this->assertSame($lb->get('hello'), 'こんにちわ');
@@ -33,6 +34,7 @@ class mainTest extends PHPUnit_Framework_TestCase{
 		$this->assertSame($lb->get('no-ja2'), 'NoJa2');
 		$this->assertSame($lb->get('no-en1'), '---');
 		$this->assertSame($lb->get('undefinedKey'), '---');
+		$this->assertSame($lb->get('undefinedKey', 'default value'), 'default value');
 
 		$lb->setLang("anylang");
 		$this->assertSame($lb->get('goodmorning'), 'good morning in anylang');

@@ -57,12 +57,16 @@ module.exports = function(){
 		var data = _this.options.bind || {};
 		data._ENV = this;
 
-		var ejs;
+		var Twig, twig;
 		try{
-			ejs = require('ejs');
-			rtn = ejs.render(rtn, data, {});
+			Twig = require('twig'), // Twig module
+			twig = Twig.twig;
+
+			rtn = new twig({
+				'data': rtn
+			}).render(data);
 		}catch(e){
-			console.error('Disable loading ejs.', e);
+			console.error('Disable loading Twig.', e);
 		}
 		return rtn;
 	}

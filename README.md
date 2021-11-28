@@ -47,9 +47,9 @@ list.csv:
 Using 2nd column as Default Language.
 
 
-### Using EJS (NodeJS)
+### Using Twig
 
-You can use "EJS" template.
+You can use "Twig" template.
 
 NodeJS:
 
@@ -73,12 +73,13 @@ list.csv:
 
 ```csv
 "","en"
-"goodmorning","Good <%= sample %>!"
+"goodmorning","Good {{ sample }}!"
 ```
 
-#### \_ENV in EJS (NodeJS)
+#### \_ENV in Twig
 
-langbank object is accessable in "EJS" template as `_ENV` .
+
+langbank object is accessable in "Twig" template as `_ENV` .
 
 NodeJS:
 
@@ -98,36 +99,16 @@ list.csv:
 ```csv
 "","en"
 "morning","Morning"
-"goodmorning","Good <%= _ENV.get('morning') %>!"
-```
-
-
-### Using Twig (PHP)
-
-list.csv:
-
-```csv
-"","en"
-"goodmorning","Good {{ sample }}!"
-```
-
-#### \_ENV in Twig (PHP)
-
-list.csv:
-
-```csv
-"","en"
-"morning","Morning"
 "goodmorning","Good {{ _ENV.get('morning') }}!"
 ```
 
 
 ## Change Log
 
-### langbank v0.0.6 (リリース日未定)
+### langbank v0.1.0 (リリース日未定)
 
 - `lb->get()` に、第2引数 `$defaultValue` を追加。
-- NodeJS版: 依存ライブラリの整理と更新。
+- NodeJS版: ejs を廃止し、 Twig に対応した。
 
 ### langbank v0.0.5 (2021-04-23)
 
