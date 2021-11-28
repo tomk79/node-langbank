@@ -2,10 +2,8 @@
  * langbank.js
  */
 module.exports = function(){
-	var csv = require('csv');
 	var fs = require('fs');
-	var Promise = require("es6-promise").Promise;
-	var ejs = require('ejs');
+	var csv = require('csv');
 
 	var _this = this;
 	this.options = {};
@@ -55,7 +53,14 @@ module.exports = function(){
 		var rtn = _this.langDb[key][lang];
 		var data = _this.options.bind || {};
 		data._ENV = this;
-		rtn = ejs.render(rtn, data, {});
+
+		var ejs;
+		try{
+			ejs = require('ejs');
+			rtn = ejs.render(rtn, data, {});
+		}catch(e){
+			console.error('Disable loading ejs.', e);
+		}
 		return rtn;
 	}
 

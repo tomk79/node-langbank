@@ -1,7 +1,6 @@
 var assert = require('assert');
 var path = require('path');
 var fs = require('fs');
-var Promise = require("es6-promise").Promise;
 var LangBank = require('../libs/main.js');
 
 describe('main Test', function() {
