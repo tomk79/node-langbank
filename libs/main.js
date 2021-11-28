@@ -2,7 +2,6 @@
  * langbank.js
  */
 module.exports = function(){
-	var fs = require('fs');
 	var csv = require('csv');
 
 	var _this = this;
@@ -81,6 +80,7 @@ module.exports = function(){
 	_this.langDb = {};
 	var csvSrc = '';
 	try {
+		var fs = require('fs');
 		csvSrc = fs.readFileSync(_this.pathCsv);
 	} catch (e) {
 		csvSrc = _this.pathCsv;
