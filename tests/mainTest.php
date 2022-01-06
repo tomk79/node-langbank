@@ -2,10 +2,10 @@
 /**
  * test for tomk79/langbank
  */
-class mainTest extends PHPUnit_Framework_TestCase{
+class mainTest extends PHPUnit\Framework\TestCase{
 	private $fs;
 
-	public function setup(){
+	public function setup() : void{
 		mb_internal_encoding('UTF-8');
 		$this->fs = new tomk79\filesystem();
 	}
@@ -96,6 +96,8 @@ class mainTest extends PHPUnit_Framework_TestCase{
 		// $list = $lb->getList();
 		// $this->assertSame($list['helloworld']['ja'], 'こんにちわ世界');
 		// $this->assertSame($list['helloworld']['en'], 'Hello World');
+
+		$this->assertTrue(true);
 	}
 
 	/**

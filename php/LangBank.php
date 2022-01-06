@@ -25,7 +25,7 @@ class LangBank{
 		$this->fs = new \tomk79\filesystem();
 
 		$this->langDb = array();
-		if( is_file($this->pathCsv) ){
+		if( is_string($this->pathCsv) && strlen($this->pathCsv) && is_file($this->pathCsv) ){
 			$csvAry = $this->fs->read_csv($this->pathCsv);
 		}else{
 			// PHP版は、ファイルからの読み込みのみに対応
@@ -75,17 +75,17 @@ class LangBank{
 	 * get word by key
 	 */
 	public function get($key, $defaultValue = '---'){
-		if( !strlen($defaultValue) ){
+		if( !strlen(''.$defaultValue) ){
 			$defaultValue = '---';
 		}
 		if( !array_key_exists($key, $this->langDb) || !$this->langDb[$key] ){
 			return $defaultValue;
 		}
 		$lang = $this->lang;
-		if( !strlen($this->langDb[$key][$lang]) ){
+		if( !strlen(''.$this->langDb[$key][$lang]) ){
 			$lang = $this->defaultLang;
 		}
-		if( !strlen($this->langDb[$key][$lang]) ){
+		if( !strlen(''.$this->langDb[$key][$lang]) ){
 			return $defaultValue;
 		}
 		$rtn = $this->langDb[$key][$lang];

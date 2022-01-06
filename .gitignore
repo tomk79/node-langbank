@@ -41,6 +41,12 @@ jspm_packages
 vendor/
 composer.lock
 
+# PHPUnit
+.phpunit.result.cache
+
+# PHP Documentor
+.phpdoc
+
 # etc...
 .DS_Store
 Thumbs.db
