@@ -105,7 +105,7 @@ list.csv:
 
 ## Change Log
 
-### langbank v0.2.0 (リリース日未定)
+### langbank v0.2.0 (2022-01-08)
 
 - PHP版: サポートするPHPのバージョンを `>=7.3.0` に変更。PHP 8.1 に対応した。
 
