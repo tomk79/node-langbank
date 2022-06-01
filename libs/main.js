@@ -2,8 +2,6 @@
  * langbank.js
  */
 module.exports = function(){
-	var csv = require('csv');
-
 	var _this = this;
 	this.options = {};
 	this.pathCsv = arguments[0];
@@ -77,47 +75,66 @@ module.exports = function(){
 		return _this.langDb;
 	}
 
+
+	/**
+	 * パース済みのCSV配列を処理する
+	 */
+	function procParsedCsvAry(csvAry, callback){
+		var langIdx=[];
+
+		for( var i1 in csvAry ){
+			// console.log(csvAry[i1]);
+			if(i1 == 0){
+				for( var i2 in csvAry[i1] ){
+					if(i2 == 0){
+						continue;
+					}
+					if(i2 == 1){
+						_this.defaultLang = csvAry[i1][i2];
+						_this.lang = csvAry[i1][i2];
+					}
+					langIdx[i2] = csvAry[i1][i2];
+				}
+			}else{
+				_this.langDb[csvAry[i1][0]] = {};
+				for( var i2 in csvAry[i1] ){
+					if(i2 == 0){continue;}
+					_this.langDb[csvAry[i1][0]][langIdx[i2]] = csvAry[i1][i2];
+				}
+			}
+		}
+		// console.log(_this.langDb);
+		callback();
+
+	}
+
+
 	_this.langDb = {};
 	var csvSrc = '';
 	try {
 		var fs = require('fs');
-		if( typeof(_this.pathCsv) === typeof('') && _this.pathCsv.length && fs.existsSync(_this.pathCsv) ){
-			csvSrc = fs.readFileSync(_this.pathCsv);
+		if( fs && typeof(_this.pathCsv) === typeof('') && _this.pathCsv.length && fs.existsSync(_this.pathCsv) ){
+			csvSrc = fs.readFileSync(_this.pathCsv).toString();
 		}else if( typeof(_this.pathCsv) === typeof('') ){
 			csvSrc = _this.pathCsv;
 		}
 	} catch (e) {
 		csvSrc = _this.pathCsv;
 	}
-	csv.parse(
-		csvSrc,
-		function(err, csvAry){
-			var langIdx=[];
 
-			for( var i1 in csvAry ){
-				// console.log(csvAry[i1]);
-				if(i1 == 0){
-					for( var i2 in csvAry[i1] ){
-						if(i2 == 0){
-							continue;
-						}
-						if(i2 == 1){
-							_this.defaultLang = csvAry[i1][i2];
-							_this.lang = csvAry[i1][i2];
-						}
-						langIdx[i2] = csvAry[i1][i2];
-					}
-				}else{
-					_this.langDb[csvAry[i1][0]] = {};
-					for( var i2 in csvAry[i1] ){
-						if(i2 == 0){continue;}
-						_this.langDb[csvAry[i1][0]][langIdx[i2]] = csvAry[i1][i2];
-					}
-				}
+	if( typeof(csvSrc) !== typeof([]) ){
+		var csv = require('csv');
+		csv.parse(
+			csvSrc,
+			function(err, csvAry){
+				procParsedCsvAry(csvAry, function(){
+					callback();
+				});
 			}
-			// console.log(_this.langDb);
+		);
+	}else{
+		procParsedCsvAry(csvSrc, function(){
 			callback();
-
-		}
-	);
+		});
+	}
 }
