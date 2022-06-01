@@ -8,18 +8,18 @@ os: Windows Server 2012 R2
 version: "{build}-{branch}"
 
 # Set a known clone folder
-clone_folder: C:\projects\proj
+clone_folder: C:\projects\unittest
 
 # environments
 environment:
   oauthtoken:
-    secure: L7aFaHhJkScePf7T8vMrHn3xtwObmwfSjy36tXMOpb7qY8LXpSeieA6xx1oKiBk9
+    secure: Pqn9WKVpsBrDqhg5l2L7FeBGCdhmTipBkGOSb1Q3xb91KbnK8f8b/bYuc//y/Rte
 
 # branches
-branches:
-  only:
-    - master
-    - develop
+#branches:
+#  only:
+#    - main
+#    - develop
 
 # fix lineendings in Windows
 init:
@@ -32,20 +32,19 @@ init:
 install:
   ## Set PHP.
   - ps: Set-Service wuauserv -StartupType Manual
-  - cinst php --version 7.3.33 -y
-  - SET PATH=C:\tools\php71\;%PATH%
-  - cd C:\tools\php71
+  - cinst php --version 8.1.4 -y
+  - SET PATH=C:\tools\php81\;%PATH%
+  - cd C:\tools\php81
   - copy php.ini-production php.ini
   - echo date.timezone="Asia/Tokyo" >> php.ini
   - echo extension_dir=ext >> php.ini
   - echo extension=php_openssl.dll >> php.ini
-  - echo extension=php_gd2.dll >> php.ini
+  - echo extension=php_gd.dll >> php.ini
   - echo extension=php_mbstring.dll >> php.ini
   - echo extension=php_curl.dll >> php.ini
   - echo extension=php_xsl.dll >> php.ini
   - echo extension=php_intl.dll >> php.ini
   - echo extension=php_pdo_sqlite.dll >> php.ini
-  - echo extension=php_pdo_mysql.dll >> php.ini
   - echo output_buffering = Off >> php.ini
   - echo default_charset = UTF-8 >> php.ini
   - echo mbstring.language = Japanese >> php.ini
@@ -59,7 +58,7 @@ install:
 
 
   ## Set Composer.
-  - cd C:\projects\proj
+  - cd C:\projects\unittest
   - php -r "readfile('https://getcomposer.org/installer');" | php
   - php composer.phar --version
   - php composer.phar config -g github-oauth.github.com %oauthtoken%
