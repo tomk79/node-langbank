@@ -117,6 +117,8 @@ module.exports = function(){
 			csvSrc = fs.readFileSync(_this.pathCsv).toString();
 		}else if( typeof(_this.pathCsv) === typeof('') ){
 			csvSrc = _this.pathCsv;
+		}else{
+			csvSrc = _this.pathCsv;
 		}
 	} catch (e) {
 		csvSrc = _this.pathCsv;
@@ -133,8 +135,10 @@ module.exports = function(){
 			}
 		);
 	}else{
-		procParsedCsvAry(csvSrc, function(){
-			callback();
-		});
+		setTimeout(function(){
+			procParsedCsvAry(csvSrc, function(){
+				callback();
+			});
+		}, 1);
 	}
 }
