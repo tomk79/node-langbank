@@ -105,7 +105,7 @@ list.csv:
 
 ## Change Log
 
-### langbank v0.2.1 (リリース日未定)
+### langbank v0.2.1 (2022-06-05)
 
 - NodeJS版: ブラウザ上で動かす場合にロードできない場合がある問題を修正。
 
