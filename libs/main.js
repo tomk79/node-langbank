@@ -44,10 +44,10 @@ module.exports = function(){
 			return defaultValue;
 		}
 		var lang = _this.lang;
-		if( !_this.langDb[key][lang].length ){
+		if( !_this.langDb[key][lang] || !_this.langDb[key][lang].length ){
 			lang = _this.defaultLang;
 		}
-		if( !_this.langDb[key][lang].length ){
+		if( !_this.langDb[key][lang] || !_this.langDb[key][lang].length ){
 			return defaultValue;
 		}
 		var rtn = _this.langDb[key][lang];

@@ -82,10 +82,10 @@ class LangBank{
 			return $defaultValue;
 		}
 		$lang = $this->lang;
-		if( !strlen(''.$this->langDb[$key][$lang]) ){
+		if( !isset($this->langDb[$key][$lang]) || !strlen(''.$this->langDb[$key][$lang]) ){
 			$lang = $this->defaultLang;
 		}
-		if( !strlen(''.$this->langDb[$key][$lang]) ){
+		if( !isset($this->langDb[$key][$lang]) || !strlen(''.$this->langDb[$key][$lang]) ){
 			return $defaultValue;
 		}
 		$rtn = $this->langDb[$key][$lang];
