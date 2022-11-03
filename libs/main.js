@@ -54,18 +54,18 @@ module.exports = function(){
 		if( !defaultValue ){
 			defaultValue = '---';
 		}
-		if( !_this.langDb[key] ){
-			return defaultValue;
-		}
 		var lang = _this.lang;
-		if( !_this.langDb[key][lang] || !_this.langDb[key][lang].length ){
+		if( !_this.langDb[key] || !_this.langDb[key][lang] || !_this.langDb[key][lang].length ){
 			lang = _this.defaultLang;
 		}
-		if( !_this.langDb[key][lang] || !_this.langDb[key][lang].length ){
-			return defaultValue;
+		var rtn = defaultValue;
+		if( _this.langDb[key] && _this.langDb[key][lang] && _this.langDb[key][lang].length ){
+			rtn = _this.langDb[key][lang];
 		}
-		var rtn = _this.langDb[key][lang];
 		var data = _this.options.bind || {};
+		for(var bindDataKey in bindData){
+			data[bindDataKey] = bindData[bindDataKey];
+		}
 		data._ENV = this;
 
 		var Twig, twig;

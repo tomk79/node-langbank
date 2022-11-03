@@ -98,22 +98,21 @@ class LangBank{
 		if( !strlen(''.$defaultValue) ){
 			$defaultValue = '---';
 		}
-		if( !array_key_exists($key, $this->langDb) || !$this->langDb[$key] ){
-			return $defaultValue;
-		}
 		$lang = $this->lang;
 		if( !isset($this->langDb[$key][$lang]) || !strlen(''.$this->langDb[$key][$lang]) ){
 			$lang = $this->defaultLang;
 		}
-		if( !isset($this->langDb[$key][$lang]) || !strlen(''.$this->langDb[$key][$lang]) ){
-			return $defaultValue;
+		$rtn = $defaultValue;
+		if( isset($this->langDb[$key][$lang]) && strlen(''.$this->langDb[$key][$lang]) ){
+			$rtn = $this->langDb[$key][$lang];
 		}
-		$rtn = $this->langDb[$key][$lang];
 		$data = (@$this->options['bind'] ? $this->options['bind'] : array());
+		foreach( $bindData as $bindDataKey=>$bindDataValue ){
+			$data[$bindDataKey] = $bindDataValue;
+		}
 		$data['_ENV'] = $this;
 
-
-		// PHP版は、ejs ではなく twig に対応
+		// Twig にバインドする
 		if( class_exists('\\Twig_Loader_Array') ){
 			// Twig ^1.35.3
 			$loader = new \Twig_Loader_Array(array(
