@@ -78,6 +78,11 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame($lb->get('bind3'), 'en');
 		$this->assertSame($lb->get('bind4'), 'こんにちわ');
 
+		$this->assertSame($lb->get('bind1', (array) array("test1" => "local bind test 1")), 'test bind test 1');
+		$this->assertSame($lb->get('bind1', (object) array("test1" => "local bind test 1")), 'test bind test 1');
+		$this->assertSame($lb->get('bind1', (object) array("test1" => "local bind test 2"), "test local template: {{ test1 }}"), 'test local bind test 2');
+		$this->assertSame($lb->get('undefined', (object) array("test1" => "local bind test 3"), "test local template: {{ test1 }}"), 'test local template: local bind test 3');
+
 	}
 
 	/**

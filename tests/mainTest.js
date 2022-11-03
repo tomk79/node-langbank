@@ -69,6 +69,10 @@ describe('main Test', function() {
 				assert.strictEqual(lb.get('bind3'), 'en');
 				assert.strictEqual(lb.get('bind4'), 'こんにちわ');
 
+				assert.strictEqual(lb.get('bind1', {"test1": "local bind test 1"}), 'test local bind test 1');
+				assert.strictEqual(lb.get('bind1', {"test1": "local bind test 2"}, "test local template: {{ test1 }}"), 'test local bind test 2');
+				assert.strictEqual(lb.get('undefined', {"test1": "local bind test 3"}, "test local template: {{ test1 }}"), 'test local template: local bind test 3');
+
 				done();
 			}
 		);
