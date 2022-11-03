@@ -49,7 +49,7 @@ Using 2nd column as Default Language.
 
 ### Using Twig
 
-You can use "Twig" template.
+Can use "Twig" template.
 
 NodeJS:
 
@@ -76,8 +76,30 @@ list.csv:
 "goodmorning","Good {{ sample }}!"
 ```
 
-#### \_ENV in Twig
+Can bind temporary data with "Twig".
 
+NodeJS:
+
+```js
+var LangBank = require('langbank');
+var lb = new LangBank(
+	'/path/to/list.csv',
+	function(){
+		lb.setLang('en');
+		console.log( lb.get('goodfoobar', {"sample": "Evening"}) ); // <- "Good Evening!"
+	}
+);
+```
+
+list.csv:
+
+```csv
+"","en"
+"goodfoobar","Good {{ sample }}!"
+```
+
+
+#### \_ENV in Twig
 
 langbank object is accessable in "Twig" template as `_ENV` .
 
