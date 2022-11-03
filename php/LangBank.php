@@ -73,8 +73,28 @@ class LangBank{
 
 	/**
 	 * get word by key
+	 *
+	 * @param string $key キー
+	 * @param string $bindData バインドデータ(省略可)
+	 * @param string $defaultValue デフォルト(キーが未定義だった場合)の戻り値
+	 * @return string 設定された言語に対応する文字列
 	 */
-	public function get($key, $defaultValue = '---'){
+	public function get($key){
+		$bindData = array();
+		$defaultValue = '---';
+
+		$args = func_get_args();
+		if( count($args) == 2 ){
+			if( is_string($args[1]) ){
+				$defaultValue = $args[1];
+			}else{
+				$bindData = $args[1];
+			}
+		}elseif( count($args) == 3 ){
+			$bindData = $args[1];
+			$defaultValue = $args[2];
+		}
+
 		if( !strlen(''.$defaultValue) ){
 			$defaultValue = '---';
 		}

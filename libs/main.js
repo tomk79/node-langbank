@@ -36,7 +36,21 @@ module.exports = function(){
 	/**
 	 * get word by key
 	 */
-	this.get = function(key, defaultValue){
+	this.get = function(key){
+		var bindData = {};
+		var defaultValue = '---';
+
+		if( arguments.length == 2 ){
+			if( typeof(arguments[1]) == typeof('string') ){
+				defaultValue = arguments[1];
+			}else{
+				bindData = arguments[1];
+			}
+		}else if( arguments.length == 3 ){
+			bindData = arguments[1];
+			defaultValue = arguments[2];
+		}
+
 		if( !defaultValue ){
 			defaultValue = '---';
 		}
