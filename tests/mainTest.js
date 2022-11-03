@@ -1,7 +1,7 @@
 var assert = require('assert');
 var path = require('path');
 var fs = require('fs');
-var LangBank = require('../libs/main.js');
+var LangBank = require('../libs/LangBank.js');
 
 describe('main Test', function() {
 

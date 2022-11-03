@@ -2,7 +2,7 @@
   "name": "langbank",
   "version": "0.2.2",
   "description": "",
-  "main": "libs/main.js",
+  "main": "libs/LangBank.js",
   "scripts": {
     "test": "mocha --ui tdd ./tests/"
   },
