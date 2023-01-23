@@ -106,7 +106,7 @@ class LangBank{
 		if( isset($this->langDb[$key][$lang]) && strlen(''.$this->langDb[$key][$lang]) ){
 			$rtn = $this->langDb[$key][$lang];
 		}
-		$data = (@$this->options['bind'] ? $this->options['bind'] : array());
+		$data = $this->options['bind'] ?? array();
 		foreach( $bindData as $bindDataKey=>$bindDataValue ){
 			$data[$bindDataKey] = $bindDataValue;
 		}
