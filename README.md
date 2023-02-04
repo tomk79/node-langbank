@@ -127,7 +127,7 @@ list.csv:
 
 ## Change Log
 
-### langbank v0.3.1 (リリース日未定)
+### langbank v0.3.1 (2023-02-05)
 
 - 内部コードの細かい修正。
 
