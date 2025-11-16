@@ -3,6 +3,7 @@
  */
 module.exports = function(){
 	var _this = this;
+	var callback;
 	this.options = {};
 	this.pathCsv = arguments[0];
 	if(arguments.length == 2){
