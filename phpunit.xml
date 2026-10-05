@@ -2,6 +2,7 @@
 	<testsuites>
 		<testsuite name="default">
 			<file>./tests/mainTest.php</file>
+			<file>./tests/sharedCasesTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
