@@ -140,11 +140,9 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('こんにちは', $lb->get('hello'));
 		$this->assertSame('表', $lb->get('table'));
 
-		// バックスラッシュはエスケープ文字ではない (PHP 7.4 以降)
-		if( PHP_VERSION_ID >= 70400 ){
-			$lb = new tomk79\LangBank( '"","en"'."\n".'"path","C:\\dir\\"' );
-			$this->assertSame('C:\\dir\\', $lb->get('path'));
-		}
+		// バックスラッシュはエスケープ文字ではない
+		$lb = new tomk79\LangBank( '"","en"'."\n".'"path","C:\\dir\\"' );
+		$this->assertSame('C:\\dir\\', $lb->get('path'));
 	}
 
 	/**

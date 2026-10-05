@@ -211,13 +211,12 @@ class LangBank{
 			// CR だけで改行された CSV
 			$src = str_replace("\r", "\n", $src);
 		}
-		// バックスラッシュはエスケープ文字として扱わない (RFC 4180)
-		$escape = (PHP_VERSION_ID >= 70400 ? '' : '\\');
 		$fp = fopen('php://temp', 'r+');
 		fwrite($fp, $src);
 		rewind($fp);
 		$rtn = array();
-		while( ($row = fgetcsv($fp, 0, ',', '"', $escape)) !== false ){
+		// バックスラッシュはエスケープ文字として扱わない (RFC 4180)
+		while( ($row = fgetcsv($fp, 0, ',', '"', '')) !== false ){
 			$rtn[] = $row;
 		}
 		fclose($fp);

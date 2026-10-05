@@ -17,7 +17,7 @@ PHP:
 $ composer require tomk79/langbank;
 ```
 
-Requirements: Node.js >= 14 / PHP >= 7.3
+Requirements: Node.js >= 14 / PHP >= 8.1 (with mbstring)
 
 
 ## Basic Usage
@@ -31,7 +31,7 @@ list.csv:
 ```
 
 - The first row is the header: the 1st column is ignored, and the rest are language codes.
-- The 2nd column is the **default language**. It is also the initial language.
+- The first language column (normally the 2nd column) is the **default language**. It is also the initial language.
 - Each following row is a word: the 1st column is the key, and the rest are the words for each language.
 
 NodeJS:
@@ -74,7 +74,7 @@ The 1st argument of the constructor (and of `load()`) accepts the following. Nod
 | `null`, `undefined`, `''`, `[]` | An empty dictionary. |
 | A string that contains a line break (`\n` or `\r`) | CSV text. |
 | A string without line breaks | A file path. Throws `FILE_NOT_FOUND` if the file does not exist. |
-| A 2-dimensional array | Parsed CSV rows. |
+| A 2-dimensional array | Parsed CSV rows. Each row must be an array (or `null`), and each cell must be a scalar value (or `null`). |
 | An array of the above (strings and/or 2-dimensional arrays) | Multiple sources, merged in order. |
 
 ```js
@@ -84,7 +84,9 @@ new LangBank([["", "en", "ja"], ["hello", "Hello", "こんにちは"]]);
 new LangBank(['/path/to/common.csv', '/path/to/app.csv']);
 ```
 
-A UTF-8 BOM and CRLF line breaks are accepted. Rows may have different numbers of columns.
+- A UTF-8 BOM, and CRLF or CR line breaks are accepted. Rows may have different numbers of columns.
+- A backslash is not an escape character (RFC 4180). Write `""` for a double quote in a quoted cell.
+- Files must be in UTF-8. In PHP, Shift_JIS and EUC-JP files are also detected and converted.
 
 ### Multiple dictionaries
 
@@ -97,7 +99,7 @@ lb.load('/path/to/plugin.csv');
 
 They are merged **cell by cell, and later wins**: a non-empty cell overwrites the existing word, and an empty cell never does. So you can put, for example, only the Japanese column in another file. Duplicated keys within one file are merged in the same way.
 
-The default language is the 2nd column of the first loaded CSV. Loading more CSV files does not change the default language or the current language.
+The default language is the first language column of the first loaded CSV. Loading more CSV files does not change the default language or the current language.
 
 
 ## get()
@@ -110,6 +112,8 @@ lb.get(key, {name: 'Tom'}, 'default value');
 lb.get(key, null, 'default value');
 ```
 
+The default value must be a string. Any other type (`null`, `false`, a number, ...) is treated as not given.
+
 ### Fallback of languages
 
 When the word for the current language is empty or undefined, `get()` looks for it in the following order:
@@ -119,7 +123,7 @@ When the word for the current language is empty or undefined, `get()` looks for 
 3. The current language with its last subtag removed, repeatedly. (`zh-Hant-TW` → `zh-Hant` → `zh`)
 4. The default language.
 
-Language codes are compared case-insensitively, and `_` is treated as `-`. So `setLang('ja_JP')` finds the `ja` column.
+Language codes are compared case-insensitively, and `_` is treated as `-`. So `setLang('ja_JP')` finds the `ja` column. If two columns are the same in this comparison (e.g. `en` and `EN`), only the first one is used.
 
 ```js
 const lb = new LangBank('/path/to/list.csv', {
@@ -247,7 +251,7 @@ Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankExcepti
 |---|---|
 | `FILE_NOT_FOUND` | The file of the given path does not exist. |
 | `FILE_READ_ERROR` | Failed to read the file. |
-| `INVALID_SOURCE` | Unsupported type of source. |
+| `INVALID_SOURCE` | Unsupported type of source, or an invalid row or cell in a CSV array. |
 | `INVALID_CSV` | The CSV header has no language columns. |
 | `CSV_PARSE_ERROR` | Failed to parse the CSV text (NodeJS only). |
 | `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` / `$e->getPrevious()`. |
@@ -271,12 +275,14 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 |---|---|
 | A missing key returns the key itself, instead of `'---'`. | `"onMissing": function(){ return '---'; }` (PHP: `'onMissing' => function(){ return '---'; }`) |
 | `get(key, '')` returns `''`, instead of `'---'`. | Pass `'---'` as the default value. |
-| Errors are thrown: a missing file, an invalid source, an invalid CSV, a Twig error in `get()`. (In v0.3, a missing path was silently treated as a CSV text, and NodeJS returned the raw word on Twig errors.) | Fix the source, or catch the error. A string with line breaks is still treated as CSV text. |
+| Errors are thrown: a missing file, an invalid source, an invalid CSV, a Twig error in `get()`. (In v0.3, a missing path silently resulted in an empty dictionary in PHP, and was treated as a CSV text in NodeJS. NodeJS returned the raw word on Twig errors.) | Fix the source, or catch the error. A string with line breaks is still treated as CSV text. |
+| Duplicated keys in one CSV are merged cell by cell. (In v0.3, a later row replaced the whole earlier row, including its empty cells.) | Remove the duplicated rows. |
+| A default value that is not a string is ignored. | Pass a string. |
 | PHP: words are no longer HTML-escaped by default. | `'autoescape' => 'html'` |
 | NodeJS: `getList()` returns a copy. Modifying it does not change the dictionary. | Use `load()` to add words. |
 | `setLang()` returns `false` for a language not in the dictionary (it still sets the language). | — |
 | A language like `en-US` now falls back to `en` before the default language. | — |
-| PHP: Twig 1.x is no longer supported (`twig/twig` `^2.16 \|\| ^3.0`). NodeJS: Node.js >= 14, Twig.js `^1.17`. | — |
+| PHP: PHP >= 8.1 and Twig `^3.27` are required. NodeJS: Node.js >= 14 and Twig.js `^1.17` are required. | Stay on v0.3. |
 | PHP: `{% raw %}` is not available in Twig 2 or later. | Use `{% verbatim %}`. |
 
 The callback style constructor still works, and is still called asynchronously.
@@ -300,7 +306,8 @@ The callback style constructor still works, and is still called asynchronously.
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
 - NodeJS版: `getList()` が辞書のコピーを返すようになった。
 - PHP版: `get()` のバインドデータに `null` を渡すと Warning が発生する不具合を修正。
-- サポートする環境を、 Node.js >= 14, Twig.js ^1.17, PHP >= 7.3, Twig ^2.16 || ^3.0 に変更。
+- PHP版: Shift_JIS のファイルが文字化けする不具合を修正。CR だけで改行された CSV を読めるようになった。 `tomk79/filesystem` への依存を削除。
+- サポートする環境を、 Node.js >= 14, Twig.js ^1.17, PHP >= 8.1, Twig ^3.27 に変更。 (PHP 8.0 以前で使える Twig には、すべてセキュリティ勧告が出ているため)
 
 ### langbank v0.3.2 (2025-11-16)
 
