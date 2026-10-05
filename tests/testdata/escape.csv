@@ -3,4 +3,4 @@
 "greet","Hi {{ name }}"
 "ref","{{ _ENV.get('amp') }}"
 "bad","{{ broken"
-"raw","{% raw %}{{ literal }}{% endraw %}"
+"raw","{% verbatim %}{{ literal }}{% endverbatim %}"

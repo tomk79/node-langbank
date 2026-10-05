@@ -25,7 +25,7 @@
 	{"name": "_ENV.get() の結果をエスケープしない", "source": "escape.csv", "lang": "en", "key": "ref", "expected": "Tom & Jerry"},
 	{"name": "_ENV.get() の結果を autoescape でエスケープ", "source": "escape.csv", "options": {"autoescape": "html"}, "lang": "en", "key": "ref", "expected": "Tom &amp; Jerry"},
 	{"name": "Twig の記法を含まない訳文はそのまま", "source": "escape.csv", "options": {"autoescape": "html"}, "lang": "en", "key": "amp", "expected": "Tom & Jerry"},
-	{"name": "{% raw %}", "source": "escape.csv", "lang": "en", "key": "raw", "expected": "{{ literal }}"},
+	{"name": "{% verbatim %}", "source": "escape.csv", "lang": "en", "key": "raw", "expected": "{{ literal }}"},
 	{"name": "twig: false", "source": "escape.csv", "options": {"twig": false}, "lang": "en", "key": "greet", "bind": {"name": "A"}, "expected": "Hi {{ name }}"},
 	{"name": "twig: false なら構文エラーにならない", "source": "escape.csv", "options": {"twig": false}, "lang": "en", "key": "bad", "expected": "{{ broken"},
 
