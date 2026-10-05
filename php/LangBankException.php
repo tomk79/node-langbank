@@ -27,7 +27,7 @@ class LangBankException extends \RuntimeException{
 	/**
 	 * エラーコードを取得する
 	 *
-	 * @return string エラーコード (FILE_NOT_FOUND, FILE_READ_ERROR, INVALID_SOURCE, INVALID_CSV, CSV_PARSE_ERROR, TEMPLATE_ERROR)
+	 * @return string エラーコード (FILE_NOT_FOUND, FILE_READ_ERROR, INVALID_SOURCE, INVALID_CSV, TEMPLATE_ERROR)
 	 */
 	public function getErrorCode(){
 		return $this->errorCode;

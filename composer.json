@@ -20,7 +20,7 @@
     ],
     "require": {
         "php": ">=7.3.0",
-        "tomk79/filesystem": "^1.0",
+        "ext-mbstring": "*",
         "twig/twig": "^2.16 || ^3.0"
     },
     "require-dev": {

@@ -188,6 +188,13 @@ describe('Initialize', function() {
 		assert.strictEqual(lb.get('helloworld'), 'Hello World');
 	});
 
+	it("CR だけで改行された CSV", function() {
+		var lb = new LangBank(csvCode.replace(/\n/g, "\r"));
+		lb.setLang('ja');
+		assert.deepStrictEqual(lb.getLangList(), ['en', 'ja', 'anylang']);
+		assert.strictEqual(lb.get('helloworld'), 'こんにちわ世界');
+	});
+
 	it("パース済みの CSV 配列を渡せる", function() {
 		var lb = new LangBank([["", "en", "ja"], ["k", "v", "値"]]);
 		lb.setLang('ja');
@@ -266,6 +273,21 @@ describe('Errors', function() {
 		});
 	});
 
+	it("不正な CSV 配列は INVALID_SOURCE", function() {
+		[
+			[listCsv, undefined],
+			[["", "en"], "row"],
+			[["", "en"], ["k", ["a", "b"]]],
+			[["", "en"], ["k", {"a": 1}]]
+		].forEach(function(src){
+			assertLangBankError(function(){
+				new LangBank(src);
+			}, 'INVALID_SOURCE');
+		});
+		var lb = new LangBank([["", "en"], null, [], ["k", 1]]);
+		assert.strictEqual(lb.get('k'), '1');
+	});
+
 	it("言語の列がない CSV は INVALID_CSV", function() {
 		assertLangBankError(function(){
 			new LangBank('""'+"\n"+'"k"');
@@ -308,6 +330,13 @@ describe('get()', function() {
 		lb.setLang('ja');
 		var get = lb.get;
 		assert.strictEqual(get('bind2'), 'ja');
+	});
+
+	it("文字列以外のデフォルト値は指定なしとして扱う", function() {
+		var lb = new LangBank(listCsv);
+		assert.strictEqual(lb.get('nope', null, false), 'nope');
+		assert.strictEqual(lb.get('nope', null, 0), 'nope');
+		assert.strictEqual(lb.get('nope', null, null), 'nope');
 	});
 
 	it("onMissing", function() {

@@ -86,10 +86,18 @@ function readCsvString(src){
 	if( !fs || typeof(fs.existsSync) !== 'function' ){
 		throw new LangBankError('FILE_NOT_FOUND', 'File not found (file system is not available): '+src);
 	}
-	if( !fs.existsSync(src) || !fs.statSync(src).isFile() ){
+	if( !fs.existsSync(src) ){
 		throw new LangBankError('FILE_NOT_FOUND', 'File not found: '+src);
 	}
-	var content;
+	var isFile, content;
+	try{
+		isFile = fs.statSync(src).isFile();
+	}catch(e){
+		throw new LangBankError('FILE_READ_ERROR', 'Failed to read file: '+src, e);
+	}
+	if( !isFile ){
+		throw new LangBankError('FILE_NOT_FOUND', 'File not found: '+src);
+	}
 	try{
 		content = fs.readFileSync(src).toString();
 	}catch(e){
@@ -160,6 +168,19 @@ var LangBank = function(src, options, callback){
 	 * パース済みのCSV配列を辞書にマージする
 	 */
 	function mergeCsv(csvAry){
+		csvAry.forEach(function(row){
+			if( row === null || row === undefined ){
+				return;
+			}
+			if( !Array.isArray(row) ){
+				throw new LangBankError('INVALID_SOURCE', 'Each row of CSV array must be an array.');
+			}
+			row.forEach(function(cell){
+				if( cell !== null && cell !== undefined && typeof(cell) === 'object' || typeof(cell) === 'function' ){
+					throw new LangBankError('INVALID_SOURCE', 'Each cell of CSV array must be a scalar value.');
+				}
+			});
+		});
 		var rows = csvAry.filter(function(row){
 			return Array.isArray(row) && row.some(function(cell){ return toStr(cell) !== ''; });
 		});
@@ -359,8 +380,8 @@ var LangBank = function(src, options, callback){
 		if( value !== null ){
 			return render(value, bindData, key);
 		}
-		if( defaultValue !== null && defaultValue !== undefined ){
-			return render(toStr(defaultValue), bindData, key);
+		if( typeof(defaultValue) === 'string' ){
+			return render(defaultValue, bindData, key);
 		}
 		if( typeof(_this.options.onMissing) === 'function' ){
 			return _this.options.onMissing(key, _this.lang);

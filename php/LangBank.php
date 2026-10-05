@@ -9,7 +9,6 @@ namespace tomk79;
  */
 class LangBank{
 
-	private $fs;
 	private $pathCsv;
 	private $options = array();
 	private $langDb = array();
@@ -27,7 +26,6 @@ class LangBank{
 	public function __construct( $csv, $options = array() ){
 		$this->pathCsv = $csv;
 		$this->options = is_array($options) ? $options : array();
-		$this->fs = new \tomk79\filesystem();
 
 		$this->load($csv);
 	}
@@ -101,8 +99,8 @@ class LangBank{
 		if( !is_null($value) ){
 			return $this->render($value, $bindData, $key);
 		}
-		if( !is_null($defaultValue) ){
-			return $this->render(''.$defaultValue, $bindData, $key);
+		if( is_string($defaultValue) ){
+			return $this->render($defaultValue, $bindData, $key);
 		}
 		$onMissing = $this->options['onMissing'] ?? null;
 		if( is_callable($onMissing) ){
@@ -190,11 +188,18 @@ class LangBank{
 		if( !is_file($csv) ){
 			throw new LangBankException('FILE_NOT_FOUND', 'File not found: '.$csv);
 		}
-		$csvAry = $this->fs->read_csv($csv);
-		if( !is_array($csvAry) ){
+		$content = @file_get_contents($csv);
+		if( !is_string($content) ){
 			throw new LangBankException('FILE_READ_ERROR', 'Failed to read file: '.$csv);
 		}
-		return $csvAry;
+
+		// UTF-8 以外 (Shift_JIS, EUC-JP) で保存されたファイルは、内部エンコーディングに変換する
+		$content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
+		$encoding = mb_detect_encoding($content, array('UTF-8', 'SJIS-win', 'eucJP-win'), true);
+		if( $encoding !== false && $encoding !== mb_internal_encoding() ){
+			$content = mb_convert_encoding($content, mb_internal_encoding(), $encoding);
+		}
+		return $this->parseCsv($content);
 	}
 
 	/**
@@ -202,11 +207,17 @@ class LangBank{
 	 */
 	private function parseCsv( $src ){
 		$src = preg_replace('/^\xEF\xBB\xBF/', '', $src);
+		if( strpos($src, "\n") === false ){
+			// CR だけで改行された CSV
+			$src = str_replace("\r", "\n", $src);
+		}
+		// バックスラッシュはエスケープ文字として扱わない (RFC 4180)
+		$escape = (PHP_VERSION_ID >= 70400 ? '' : '\\');
 		$fp = fopen('php://temp', 'r+');
 		fwrite($fp, $src);
 		rewind($fp);
 		$rtn = array();
-		while( ($row = fgetcsv($fp, 0, ',', '"', '\\')) !== false ){
+		while( ($row = fgetcsv($fp, 0, ',', '"', $escape)) !== false ){
 			$rtn[] = $row;
 		}
 		fclose($fp);
@@ -219,8 +230,16 @@ class LangBank{
 	private function mergeCsv( $csvAry ){
 		$rows = array();
 		foreach( $csvAry as $row ){
-			if( !is_array($row) ){
+			if( is_null($row) ){
 				continue;
+			}
+			if( !is_array($row) ){
+				throw new LangBankException('INVALID_SOURCE', 'Each row of CSV array must be an array.');
+			}
+			foreach( $row as $cell ){
+				if( !is_null($cell) && !is_scalar($cell) ){
+					throw new LangBankException('INVALID_SOURCE', 'Each cell of CSV array must be a scalar value.');
+				}
 			}
 			foreach( $row as $cell ){
 				if( ''.$cell !== '' ){

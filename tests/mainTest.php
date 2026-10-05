@@ -127,6 +127,27 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
+	 * CR だけの改行, Shift_JIS のファイル
+	 */
+	public function testLineBreaksAndEncodings(){
+		$lb = new tomk79\LangBank( str_replace("\n", "\r", $this->csvCode) );
+		$lb->setLang("ja");
+		$this->assertSame(array('en', 'ja', 'anylang'), $lb->getLangList());
+		$this->assertSame('こんにちわ世界', $lb->get('helloworld'));
+
+		$lb = new tomk79\LangBank( __DIR__.'/testdata/sjis.csv' );
+		$lb->setLang("ja");
+		$this->assertSame('こんにちは', $lb->get('hello'));
+		$this->assertSame('表', $lb->get('table'));
+
+		// バックスラッシュはエスケープ文字ではない (PHP 7.4 以降)
+		if( PHP_VERSION_ID >= 70400 ){
+			$lb = new tomk79\LangBank( '"","en"'."\n".'"path","C:\\dir\\"' );
+			$this->assertSame('C:\\dir\\', $lb->get('path'));
+		}
+	}
+
+	/**
 	 * null or undefined
 	 */
 	public function testNull(){
@@ -197,6 +218,22 @@ class mainTest extends PHPUnit\Framework\TestCase{
 				new tomk79\LangBank($src);
 			}, 'INVALID_SOURCE');
 		}
+
+		foreach( array(
+			array($this->listCsv, null, 1),
+			array(array("", "en"), "row"),
+			array(array("", "en"), array("k", array("a", "b"))),
+		) as $src ){
+			$this->assertLangBankError(function() use ($src){
+				new tomk79\LangBank($src);
+			}, 'INVALID_SOURCE');
+		}
+		$lb = new tomk79\LangBank(array(array("", "en"), null, array(), array("k", 1)));
+		$this->assertSame('1', $lb->get('k'));
+
+		// 文字列以外のデフォルト値は指定なしとして扱う
+		$this->assertSame('nope', $lb->get('nope', null, false));
+		$this->assertSame('nope', $lb->get('nope', null, 0));
 
 		$this->assertLangBankError(function(){
 			new tomk79\LangBank('""'."\n".'"k"');
