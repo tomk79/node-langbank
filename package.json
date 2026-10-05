@@ -3,6 +3,16 @@
   "version": "0.3.2",
   "description": "Simple multilingual dictionary library for Node.js and PHP, driven by a CSV word list with Twig templating.",
   "main": "libs/LangBank.js",
+  "types": "libs/LangBank.d.ts",
+  "exports": {
+    ".": {
+      "types": "./libs/LangBank.d.ts",
+      "import": "./libs/LangBank.mjs",
+      "require": "./libs/LangBank.js"
+    },
+    "./package.json": "./package.json",
+    "./libs/*": "./libs/*"
+  },
   "engines": {
     "node": ">=14"
   },
