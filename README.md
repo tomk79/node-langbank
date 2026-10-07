@@ -87,6 +87,7 @@ new LangBank(['/path/to/common.csv', '/path/to/app.csv']);
 - A UTF-8 BOM, and CRLF or CR line breaks are accepted. Rows may have different numbers of columns.
 - A backslash is not an escape character (RFC 4180). Write `""` for a double quote in a quoted cell.
 - Files must be in UTF-8. In PHP, Shift_JIS and EUC-JP files are also detected and converted.
+- Invalid CSV (e.g. a stray `"` in a cell, or a quote that is not closed) is handled differently: NodeJS throws `CSV_PARSE_ERROR`, while PHP reads it in its own way without an error. To share a CSV file between NodeJS and PHP, keep it valid.
 
 ### Multiple dictionaries
 
@@ -98,6 +99,8 @@ lb.load('/path/to/plugin.csv');
 ```
 
 They are merged **cell by cell, and later wins**: a non-empty cell overwrites the existing word, and an empty cell never does. So you can put, for example, only the Japanese column in another file. Duplicated keys within one file are merged in the same way.
+
+Language columns are matched case-insensitively, and `_` is treated as `-`. So a `JA` or `ja_JP` column is merged into an existing `ja` or `ja-JP` column, in the same way as above (also within one file). The column keeps the name that appeared first.
 
 The default language is the first language column of the first loaded CSV. Loading more CSV files does not change the default language or the current language.
 
@@ -123,7 +126,7 @@ When the word for the current language is empty or undefined, `get()` looks for 
 3. The current language with its last subtag removed, repeatedly. (`zh-Hant-TW` → `zh-Hant` → `zh`)
 4. The default language.
 
-Language codes are compared case-insensitively, and `_` is treated as `-`. So `setLang('ja_JP')` finds the `ja` column. If two columns are the same in this comparison (e.g. `en` and `EN`), only the first one is used.
+Language codes are compared case-insensitively, and `_` is treated as `-`. So `setLang('ja_JP')` finds the `ja` column.
 
 ```js
 const lb = new LangBank('/path/to/list.csv', {
@@ -134,6 +137,8 @@ const lb = new LangBank('/path/to/list.csv', {
 });
 ```
 
+The languages in `options.fallback` are looked up as written: their subtags are not removed. To fall back to `zh-Hant` after `zh-Hant-TW`, write both: `["zh-Hant-TW", "zh-Hant"]`.
+
 `setLang()` always sets the language, and returns `false` if the dictionary has neither the language nor any of its fallback languages (except the default language). `getLangList()` returns the languages in the dictionary.
 
 ### Missing keys
@@ -141,14 +146,15 @@ const lb = new LangBank('/path/to/list.csv', {
 When no word is found, `get()` returns:
 
 1. The default value, if given (an empty string `''` is returned as is).
-2. Otherwise, the return value of `options.onMissing(key, lang)`, if given.
+2. Otherwise, the return value of `options.onMissing(key, lang)`, if given and it is a string.
 3. Otherwise, **the key itself**.
+
+`onMissing` may return nothing, for example to only log missing words:
 
 ```js
 const lb = new LangBank('/path/to/list.csv', {
 	"onMissing": function(key, lang){
-		console.warn('Missing word:', key, lang);
-		return key;
+		console.warn('Missing word:', key, lang); // get() returns the key
 	}
 });
 lb.has('hello'); // <- true if a word is found
@@ -186,7 +192,7 @@ lb.get('undefinedKey', {"name": "Tom"}, 'Hello, {{ name }}!'); // <- "Hello, Tom
 
 ### \_ENV in Twig
 
-The LangBank object is accessible in Twig templates as `_ENV`.
+A read-only view of the LangBank object is accessible in Twig templates as `_ENV`. It has `lang`, `defaultLang`, `get()`, `has()`, `getLang()` and `getDefaultLang()`. Other methods (`setLang()`, `load()`, ...) are not available.
 
 ```csv
 "","en"
@@ -194,6 +200,20 @@ The LangBank object is accessible in Twig templates as `_ENV`.
 "goodmorning","Good {{ _ENV.get('morning') }}!"
 "currentlang","Current language is {{ _ENV.lang }}."
 ```
+
+`_ENV.get()` inherits the bind data of the outer `get()`. The data given to `_ENV.get()` itself has priority.
+
+```csv
+"","en"
+"greeting","Hello, {{ name }}"
+"welcome","{{ _ENV.get('greeting') }} Welcome!"
+```
+
+```js
+lb.get('welcome', {"name": "Tom"}); // <- "Hello, Tom Welcome!"
+```
+
+A word that refers to itself, directly or through other words (`a` → `b` → `a`), throws `CIRCULAR_REFERENCE`. A key that appears again while it is being rendered is always treated as circular, even with a different default value or bind data.
 
 ### Writing `{{` literally
 
@@ -212,7 +232,15 @@ By default, words are **not** HTML-escaped: LangBank returns plain strings, and 
 
 ### Security
 
-Words are evaluated as Twig templates. Do not load CSV files from untrusted sources, or set `"twig": false` if you have to.
+Words and default values are evaluated as Twig templates. Do not put untrusted strings into them:
+
+- Do not load CSV files from untrusted sources, or set `"twig": false` if you have to.
+- Do not pass untrusted strings (e.g. user input) as the default value. Pass them as bind data instead: the values of bind data are not evaluated.
+
+```js
+lb.get('key', userInput);                           // NG
+lb.get('key', {"input": userInput}, '{{ input }}');  // OK
+```
 
 
 ## Options
@@ -222,7 +250,7 @@ Words are evaluated as Twig templates. Do not load CSV files from untrusted sour
 | `bind` | `{}` | Data bound to all Twig templates. |
 | `autoescape` | `false` | Escaping strategy of Twig (`false`, `"html"`, ...). |
 | `twig` | `true` | `false` to return words without evaluating Twig. |
-| `onMissing` | (none) | `function(key, lang)` that returns the string for a missing key. |
+| `onMissing` | (none) | `function(key, lang)` that returns the string for a missing key. If it returns a non-string, the key is used. |
 | `fallback` | `{}` | Fallback languages for each language: `{"lang": ["fallback", ...]}`. |
 
 In PHP, pass the options as an associative array, and `onMissing` as a callable.
@@ -235,12 +263,15 @@ In PHP, pass the options as an associative array, and `onMissing` as a callable.
 | `new LangBank(source[, options][, callback])` | Loads the dictionary. Throws on errors. The callback (NodeJS only) is called asynchronously after the initialization. In PHP: `new LangBank($source[, $options])` |
 | `setLang(lang)` | Sets the current language. Returns `false` if the dictionary has no such language (see [Fallback of languages](#fallback-of-languages)). |
 | `getLang()` | Returns the current language. |
+| `getDefaultLang()` | Returns the default language. |
 | `getLangList()` | Returns the languages in the dictionary. |
 | `get(key[, bindData][, defaultValue])` | Returns the word in the current language. |
 | `has(key)` | Returns `true` if a word for the key is found in the current language (including fallback). |
-| `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. |
+| `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. |
 | `load(source)` | Loads and merges another dictionary. Returns the LangBank object. |
 | `ready()` | (NodeJS only) Returns a Promise resolved with the LangBank object. |
+
+The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Other properties are internal.
 
 
 ## Errors
@@ -255,6 +286,9 @@ Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankExcepti
 | `INVALID_CSV` | The CSV header has no language columns. |
 | `CSV_PARSE_ERROR` | Failed to parse the CSV text (NodeJS only). |
 | `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` / `$e->getPrevious()`. |
+| `CIRCULAR_REFERENCE` | A word refers to itself through `_ENV.get()`. |
+
+An error in `_ENV.get()` is thrown as is from the outer `get()`. For example, a Twig error in the inner word is a `TEMPLATE_ERROR` of the inner key.
 
 Even when a callback is given, errors are thrown from the constructor synchronously:
 
@@ -284,6 +318,10 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 | A language like `en-US` now falls back to `en` before the default language. | — |
 | PHP: PHP >= 8.1 and Twig `^3.27` are required. NodeJS: Node.js >= 14 and Twig.js `^1.17` are required. | Stay on v0.3. |
 | PHP: `{% raw %}` is not available in Twig 2 or later. | Use `{% verbatim %}`. |
+| `_ENV` in Twig templates is a read-only view. `_ENV.setLang()`, `_ENV.load()`, `_ENV.options`, etc. are not available. | Call them outside the templates. |
+| `_ENV.get()` inherits the bind data of the outer `get()`. | Pass the data to `_ENV.get()` explicitly to override it. |
+| Language columns that differ only in case or `_`/`-` (e.g. `ja` and `JA`) are merged into one column. | — |
+| NodeJS: files other than `libs/LangBank.js` cannot be required directly (`exports` in package.json). | Require `langbank`. |
 
 The callback style constructor still works, and is still called asynchronously.
 
@@ -300,8 +338,13 @@ The callback style constructor still works, and is still called asynchronously.
 - 複数の CSV をマージできるようになった。 `load()` を追加。
 - 言語のフォールバックを拡張した (`en-US` → `en` など)。 `fallback` オプションを追加。
 - `autoescape`, `twig` オプションを追加。HTML エスケープの既定を、NodeJS版・PHP版ともに無効に統一した。
-- `has()`, `getLangList()` を追加。 `setLang()` は、辞書にない言語に対して `false` を返すようになった。
+- `has()`, `getLangList()`, `getDefaultLang()` を追加。 `setLang()` は、辞書にない言語に対して `false` を返すようになった。
 - NodeJS版: 同期で初期化するようになった。 `ready()` を追加。 TypeScript の型定義と ESM に対応。
+- Twig テンプレートの `_ENV` を、読み取り専用のオブジェクトに変更した。 `_ENV.get()` は外側の `get()` のバインドデータを引き継ぐ。
+- 訳文の循環参照を検出し、 `CIRCULAR_REFERENCE` を投げるようになった。 (PHP版で Fatal error になっていた)
+- 大文字・小文字や `_`/`-` だけが違う言語名の列を、1 つの列にまとめるようになった。
+- `onMissing` が文字列以外を返した場合は、キーを返すようにした。
+- npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
 - NodeJS版: `getList()` が辞書のコピーを返すようになった。

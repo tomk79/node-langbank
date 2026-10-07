@@ -12,17 +12,29 @@ describe('Shared cases (JS/PHP 共通)', function() {
 			var lb = new LangBank(source, c.options || {});
 			lb.setLang(c.lang);
 
-			var result;
-			if( 'bind' in c && 'default' in c ){
-				result = lb.get(c.key, c.bind, c.default);
-			}else if( 'bind' in c ){
-				result = lb.get(c.key, c.bind);
-			}else if( 'default' in c ){
-				result = lb.get(c.key, c.default);
-			}else{
-				result = lb.get(c.key);
+			function get(){
+				if( 'bind' in c && 'default' in c ){
+					return lb.get(c.key, c.bind, c.default);
+				}else if( 'bind' in c ){
+					return lb.get(c.key, c.bind);
+				}else if( 'default' in c ){
+					return lb.get(c.key, c.default);
+				}
+				return lb.get(c.key);
 			}
-			assert.strictEqual(result, c.expected);
+
+			if( 'error' in c ){
+				assert.throws(get, function(e){
+					assert.ok(e instanceof LangBank.LangBankError);
+					assert.strictEqual(e.code, c.error);
+					if( 'message' in c ){
+						assert.ok(e.message.indexOf(c.message) >= 0, e.message);
+					}
+					return true;
+				});
+				return;
+			}
+			assert.strictEqual(get(), c.expected);
 		});
 	});
 

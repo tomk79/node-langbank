@@ -14,6 +14,7 @@ class LangBank{
 	private $langDb = array();
 	private $langList = array();
 	private $langMap = array(); // 正規化した言語コード => 列名
+	private $renderStack = array(); // 描画中の get() の {key, bind, error}
 	public $defaultLang;
 	public $lang;
 
@@ -56,9 +57,20 @@ class LangBank{
 
 	/**
 	 * get Language
+	 *
+	 * @return string|null 現在の言語
 	 */
 	public function getLang(){
 		return $this->lang;
+	}
+
+	/**
+	 * get default Language
+	 *
+	 * @return string|null デフォルト言語 (最初に読み込んだ CSV の、最初の言語の列)
+	 */
+	public function getDefaultLang(){
+		return $this->defaultLang;
 	}
 
 	/**
@@ -95,18 +107,16 @@ class LangBank{
 		}
 
 		$key = ''.$key;
-		$value = $this->findValue($key);
-		if( !is_null($value) ){
-			return $this->render($value, $bindData, $key);
+		try{
+			return $this->getWord($key, $bindData, $defaultValue);
+		}catch( LangBankException $e ){
+			$parent = end($this->renderStack);
+			if( $parent && !$parent->error ){
+				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
+				$parent->error = $e;
+			}
+			throw $e;
 		}
-		if( is_string($defaultValue) ){
-			return $this->render($defaultValue, $bindData, $key);
-		}
-		$onMissing = $this->options['onMissing'] ?? null;
-		if( is_callable($onMissing) ){
-			return call_user_func($onMissing, $key, $this->lang);
-		}
-		return $key;
 	}
 
 	/**
@@ -251,27 +261,24 @@ class LangBank{
 			return;
 		}
 
+		// 大小文字や _/- だけが違う言語名は、最初に現れた表記の列にまとめる
 		$langIdx = array();
 		foreach( $rows[0] as $idx => $cell ){
 			$lang = ''.$cell;
 			if( $idx == 0 || $lang === '' ){
 				continue;
 			}
-			$langIdx[$idx] = $lang;
+			$normalized = $this->normalizeLang($lang);
+			if( !array_key_exists($normalized, $this->langMap) ){
+				$this->langMap[$normalized] = $lang;
+				$this->langList[] = $lang;
+			}
+			$langIdx[$idx] = $this->langMap[$normalized];
 		}
 		if( !count($langIdx) ){
 			throw new LangBankException('INVALID_CSV', 'CSV header has no language columns.');
 		}
 
-		foreach( $langIdx as $lang ){
-			if( !in_array($lang, $this->langList, true) ){
-				$this->langList[] = $lang;
-			}
-			$normalized = $this->normalizeLang($lang);
-			if( !array_key_exists($normalized, $this->langMap) ){
-				$this->langMap[$normalized] = $lang;
-			}
-		}
 		$firstLang = reset($langIdx);
 		if( is_null($this->defaultLang) ){
 			$this->defaultLang = $firstLang;
@@ -368,6 +375,38 @@ class LangBank{
 	}
 
 	/**
+	 * get() の本体
+	 */
+	private function getWord( $key, $bindData, $defaultValue ){
+		$path = array();
+		foreach( $this->renderStack as $frame ){
+			$path[] = $frame->key;
+		}
+		$pos = array_search($key, $path, true);
+		if( $pos !== false ){
+			$path = array_slice($path, $pos);
+			$path[] = $key;
+			throw new LangBankException('CIRCULAR_REFERENCE', 'Circular reference: '.implode(' -> ', $path));
+		}
+
+		$value = $this->findValue($key);
+		if( !is_null($value) ){
+			return $this->render($value, $bindData, $key);
+		}
+		if( is_string($defaultValue) ){
+			return $this->render($defaultValue, $bindData, $key);
+		}
+		$onMissing = $this->options['onMissing'] ?? null;
+		if( is_callable($onMissing) ){
+			$missing = call_user_func($onMissing, $key, $this->lang);
+			if( is_string($missing) ){
+				return $missing;
+			}
+		}
+		return $key;
+	}
+
+	/**
 	 * Twig テンプレートを評価する
 	 */
 	private function render( $template, $bindData, $key ){
@@ -375,19 +414,24 @@ class LangBank{
 			return $template;
 		}
 
-		$data = (array) ($this->options['bind'] ?? array());
+		// バインドデータは options.bind < 外側の get() のデータ < この get() のデータ の順で上書きする
+		$parent = end($this->renderStack);
+		$bind = $parent ? $parent->bind : (array) ($this->options['bind'] ?? array());
 		if( is_array($bindData) || is_object($bindData) ){
 			foreach( $bindData as $bindDataKey=>$bindDataValue ){
-				$data[$bindDataKey] = $bindDataValue;
+				$bind[$bindDataKey] = $bindDataValue;
 			}
 		}
-		$data['_ENV'] = $this;
+		$data = $bind;
+		$data['_ENV'] = $this->createTemplateEnv();
 
 		$autoescape = $this->options['autoescape'] ?? false;
 		if( $autoescape === true ){
 			$autoescape = 'html';
 		}
 
+		$frame = (object) array('key' => $key, 'bind' => $bind, 'error' => null);
+		$this->renderStack[] = $frame;
 		try{
 			// Twig はコンパイル済みのクラスを テンプレート名とソース で識別するため、
 			// autoescape の設定ごとにテンプレート名を分ける
@@ -400,8 +444,41 @@ class LangBank{
 			));
 			return $twig->render($templateName, $data);
 		}catch( \Throwable $e ){
+			if( $frame->error ){
+				// 入れ子の get() で起きたエラーは、包み直さずにそのまま投げる
+				throw $frame->error;
+			}
 			throw new LangBankException('TEMPLATE_ERROR', 'Failed to render template of key "'.$key.'" (lang: '.$this->lang.'): '.$e->getMessage(), $e);
+		}finally{
+			array_pop($this->renderStack);
 		}
+	}
+
+	/**
+	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
+	 *
+	 * Twig は `_ENV.lang` を getLang() で解決する。
+	 * (無名クラスは serialize() できないため、プロパティには保存しない)
+	 */
+	private function createTemplateEnv(){
+		return new class($this){
+			private $lb;
+			public function __construct( $lb ){
+				$this->lb = $lb;
+			}
+			public function get( $key ){
+				return call_user_func_array(array($this->lb, 'get'), func_get_args());
+			}
+			public function has( $key ){
+				return $this->lb->has($key);
+			}
+			public function getLang(){
+				return $this->lb->getLang();
+			}
+			public function getDefaultLang(){
+				return $this->lb->getDefaultLang();
+			}
+		};
 	}
 
 }

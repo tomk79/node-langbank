@@ -163,6 +163,7 @@ var LangBank = function(src, options, callback){
 
 	var langList = [];
 	var langMap = Object.create(null); // 正規化した言語コード => 列名
+	var renderStack = []; // 描画中の get() の {key, bind, error}
 
 	/**
 	 * パース済みのCSV配列を辞書にマージする
@@ -188,6 +189,7 @@ var LangBank = function(src, options, callback){
 			return;
 		}
 
+		// 大小文字や _/- だけが違う言語名は、最初に現れた表記の列にまとめる
 		var langIdx = [];
 		var firstLang = null;
 		rows[0].forEach(function(cell, idx){
@@ -195,24 +197,20 @@ var LangBank = function(src, options, callback){
 			if( idx == 0 || lang === '' ){
 				return;
 			}
-			langIdx[idx] = lang;
+			var normalized = normalizeLang(lang);
+			if( !(normalized in langMap) ){
+				langMap[normalized] = lang;
+				langList.push(lang);
+			}
+			langIdx[idx] = langMap[normalized];
 			if( firstLang === null ){
-				firstLang = lang;
+				firstLang = langIdx[idx];
 			}
 		});
 		if( firstLang === null ){
 			throw new LangBankError('INVALID_CSV', 'CSV header has no language columns.');
 		}
 
-		langIdx.forEach(function(lang){
-			if( langList.indexOf(lang) < 0 ){
-				langList.push(lang);
-			}
-			var normalized = normalizeLang(lang);
-			if( !(normalized in langMap) ){
-				langMap[normalized] = lang;
-			}
-		});
 		if( _this.defaultLang === null ){
 			_this.defaultLang = firstLang;
 		}
@@ -311,18 +309,25 @@ var LangBank = function(src, options, callback){
 			return template;
 		}
 
-		var data = {};
-		var globalBind = _this.options.bind || {};
-		for( var globalKey in globalBind ){
-			data[globalKey] = globalBind[globalKey];
+		// バインドデータは options.bind < 外側の get() のデータ < この get() のデータ の順で上書きする
+		var bind = {};
+		var parentBind = renderStack.length ? renderStack[renderStack.length - 1].bind : (_this.options.bind || {});
+		for( var parentKey in parentBind ){
+			bind[parentKey] = parentBind[parentKey];
 		}
 		if( bindData && typeof(bindData) === 'object' ){
 			for( var bindDataKey in bindData ){
-				data[bindDataKey] = bindData[bindDataKey];
+				bind[bindDataKey] = bindData[bindDataKey];
 			}
 		}
-		data._ENV = _this;
+		var data = {};
+		for( var dataKey in bind ){
+			data[dataKey] = bind[dataKey];
+		}
+		data._ENV = templateEnv;
 
+		var frame = {'key': key, 'bind': bind, 'error': null};
+		renderStack.push(frame);
 		try{
 			return Twig.twig({
 				'data': template,
@@ -330,10 +335,28 @@ var LangBank = function(src, options, callback){
 				'rethrow': true
 			}).render(data);
 		}catch(e){
+			if( frame.error ){
+				// 入れ子の get() で起きたエラーは、包み直さずにそのまま投げる
+				throw frame.error;
+			}
 			var message = (e && (e.message || e.type)) || String(e);
 			throw new LangBankError('TEMPLATE_ERROR', 'Failed to render template of key "'+key+'" (lang: '+_this.lang+'): '+message, e);
+		}finally{
+			renderStack.pop();
 		}
 	}
+
+	/**
+	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
+	 */
+	var templateEnv = Object.freeze(Object.create(null, {
+		'lang': {'enumerable': true, 'get': function(){ return _this.lang; }},
+		'defaultLang': {'enumerable': true, 'get': function(){ return _this.defaultLang; }},
+		'get': {'enumerable': true, 'value': function(){ return _this.get.apply(_this, arguments); }},
+		'has': {'enumerable': true, 'value': function(key){ return _this.has(key); }},
+		'getLang': {'enumerable': true, 'value': function(){ return _this.getLang(); }},
+		'getDefaultLang': {'enumerable': true, 'value': function(){ return _this.getDefaultLang(); }}
+	}));
 
 	/**
 	 * set Language
@@ -348,6 +371,13 @@ var LangBank = function(src, options, callback){
 	 */
 	this.getLang = function(){
 		return _this.lang;
+	}
+
+	/**
+	 * get default Language
+	 */
+	this.getDefaultLang = function(){
+		return _this.defaultLang;
 	}
 
 	/**
@@ -376,6 +406,26 @@ var LangBank = function(src, options, callback){
 		}
 
 		key = toStr(key);
+		try{
+			return getWord(key, bindData, defaultValue);
+		}catch(e){
+			if( e instanceof LangBankError && renderStack.length && !renderStack[renderStack.length - 1].error ){
+				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
+				renderStack[renderStack.length - 1].error = e;
+			}
+			throw e;
+		}
+	}
+
+	/**
+	 * get() の本体
+	 */
+	function getWord(key, bindData, defaultValue){
+		var path = renderStack.map(function(frame){ return frame.key; });
+		if( path.indexOf(key) >= 0 ){
+			throw new LangBankError('CIRCULAR_REFERENCE', 'Circular reference: '+path.slice(path.indexOf(key)).concat([key]).join(' -> '));
+		}
+
 		var value = findValue(key);
 		if( value !== null ){
 			return render(value, bindData, key);
@@ -384,7 +434,10 @@ var LangBank = function(src, options, callback){
 			return render(defaultValue, bindData, key);
 		}
 		if( typeof(_this.options.onMissing) === 'function' ){
-			return _this.options.onMissing(key, _this.lang);
+			var missing = _this.options.onMissing(key, _this.lang);
+			if( typeof(missing) === 'string' ){
+				return missing;
+			}
 		}
 		return key;
 	}

@@ -29,7 +29,7 @@
 	{"name": "twig: false", "source": "escape.csv", "options": {"twig": false}, "lang": "en", "key": "greet", "bind": {"name": "A"}, "expected": "Hi {{ name }}"},
 	{"name": "twig: false なら構文エラーにならない", "source": "escape.csv", "options": {"twig": false}, "lang": "en", "key": "bad", "expected": "{{ broken"},
 
-	{"name": "マージ: 後の CSV で空セルを埋める", "source": ["merge_a.csv", "merge_b.csv"], "lang": "ja", "key": "hello", "expected": "こんにちは"},
+	{"name": "マージ: 後の CSV で空セルを埋める", "source": ["merge_a.csv", "merge_b.csv"], "lang": "ja_jp", "key": "hello", "expected": "こんにちは"},
 	{"name": "マージ: 前の CSV の値を残す", "source": ["merge_a.csv", "merge_b.csv"], "lang": "en", "key": "hello", "expected": "Hello"},
 	{"name": "マージ: 新しい言語の列", "source": ["merge_a.csv", "merge_b.csv"], "lang": "fr", "key": "hello", "expected": "Bonjour"},
 	{"name": "マージ: 空セルでは上書きしない", "source": ["merge_a.csv", "merge_b.csv"], "lang": "ja", "key": "bye", "expected": "さようなら"},
@@ -51,5 +51,23 @@
 	{"name": "フォールバック: options.fallback", "source": "regional.csv", "options": {"fallback": {"zh-HK": ["zh-Hant"]}}, "lang": "zh-HK", "key": "hello", "expected": "你好"},
 	{"name": "フォールバック: options.fallback のキーも正規化", "source": "regional.csv", "options": {"fallback": {"zh_hk": ["zh-Hant"]}}, "lang": "zh-HK", "key": "hello", "expected": "你好"},
 	{"name": "フォールバック: options.fallback は自動より優先", "source": "regional.csv", "options": {"fallback": {"en-AU": ["en-US"]}}, "lang": "en-AU", "key": "color", "expected": "Color"},
-	{"name": "フォールバック: pt-BR", "source": "regional.csv", "lang": "pt-BR", "key": "hello", "expected": "Olá"}
+	{"name": "フォールバック: pt-BR", "source": "regional.csv", "lang": "pt-BR", "key": "hello", "expected": "Olá"},
+	{"name": "フォールバック: options.fallback の言語はサブタグを削らない", "source": "regional.csv", "options": {"fallback": {"zh-HK": ["zh-Hant-TW"]}}, "lang": "zh-HK", "key": "hello", "expected": "Hello"},
+
+	{"name": "言語名の揺れ: 同じファイル内の列をまとめる", "source": "header_case_a.csv", "lang": "en", "key": "bye", "expected": "Bye"},
+	{"name": "言語名の揺れ: 同じファイル内の列をまとめる (EN)", "source": "header_case_a.csv", "lang": "EN", "key": "hello", "expected": "Hello"},
+	{"name": "言語名の揺れ: 後の CSV の列をまとめる", "source": ["header_case_a.csv", "header_case_b.csv"], "lang": "ja-JP", "key": "bye", "expected": "さようなら"},
+	{"name": "言語名の揺れ: 前の CSV の値を残す", "source": ["header_case_a.csv", "header_case_b.csv"], "lang": "ja_jp", "key": "hello", "expected": "こんにちは"},
+
+	{"name": "_ENV: lang, defaultLang, getLang(), getDefaultLang(), has()", "source": "env.csv", "lang": "ja", "key": "env", "expected": "ja/en/ja/en/yes"},
+	{"name": "_ENV: setLang, load, options, getList は見えない", "source": "env.csv", "lang": "en", "key": "hidden", "expected": "hidden"},
+	{"name": "_ENV.get(): options.bind を引き継ぐ", "source": "env.csv", "options": {"bind": {"name": "Global"}}, "lang": "en", "key": "welcome", "expected": "Hello, Global Welcome!"},
+	{"name": "_ENV.get(): 外側のバインドデータを引き継ぐ", "source": "env.csv", "options": {"bind": {"name": "Global"}}, "lang": "en", "key": "welcome", "bind": {"name": "Tom"}, "expected": "Hello, Tom Welcome!"},
+	{"name": "_ENV.get(): 明示的に渡したデータが優先", "source": "env.csv", "lang": "en", "key": "welcome_inner", "bind": {"name": "Tom"}, "expected": "Hello, Inner"},
+	{"name": "_ENV.get(): 同じキーを並べて呼べる", "source": "env.csv", "lang": "en", "key": "twice", "bind": {"name": "Tom"}, "expected": "Hello, Tom / Hello, Tom"},
+	{"name": "循環参照: 自分自身", "source": "env.csv", "lang": "en", "key": "self", "error": "CIRCULAR_REFERENCE", "message": "self -> self"},
+	{"name": "循環参照: 複数のキー", "source": "env.csv", "lang": "en", "key": "loop_a", "error": "CIRCULAR_REFERENCE", "message": "loop_a -> loop_b -> loop_c -> loop_a"},
+	{"name": "循環参照: 途中のキーから", "source": "env.csv", "lang": "en", "key": "loop_b", "error": "CIRCULAR_REFERENCE", "message": "loop_b -> loop_c -> loop_a -> loop_b"},
+	{"name": "循環参照: デフォルト値から自分を参照", "source": "env.csv", "lang": "en", "key": "undefinedKey", "default": "{{ _ENV.get('undefinedKey') }}", "error": "CIRCULAR_REFERENCE"},
+	{"name": "入れ子のエラーは包み直さない", "source": "env.csv", "lang": "en", "key": "outer", "error": "TEMPLATE_ERROR", "message": "key \"bad\""}
 ]

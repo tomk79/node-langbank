@@ -355,6 +355,44 @@ describe('get()', function() {
 		assert.deepStrictEqual(log, [['undefinedKey', 'ja'], ['no-en1', 'ja']]);
 	});
 
+	it("onMissing が文字列以外を返したらキーを返す", function() {
+		[undefined, null, false, 0, {}].forEach(function(ret){
+			var lb = new LangBank(listCsv, {
+				"onMissing": function(){ return ret; }
+			});
+			assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
+		});
+		var lb = new LangBank(listCsv, {
+			"onMissing": function(){ return ''; }
+		});
+		assert.strictEqual(lb.get('undefinedKey'), '');
+	});
+
+	it("エラーの後も描画中の状態が残らない", function() {
+		var lb = new LangBank(__dirname+'/testdata/env.csv', {"bind": {"name": "Global"}});
+		assert.throws(function(){
+			lb.get('loop_a', {"name": "Tom"});
+		}, function(e){
+			return e.code === 'CIRCULAR_REFERENCE';
+		});
+		assert.strictEqual(lb.get('welcome'), 'Hello, Global Welcome!');
+		assert.throws(function(){
+			lb.get('outer', {"name": "Tom"});
+		}, function(e){
+			return e.code === 'TEMPLATE_ERROR';
+		});
+		assert.strictEqual(lb.get('twice'), 'Hello, Global / Hello, Global');
+	});
+
+	it("_ENV からファイルを読み込めない", function() {
+		var lb = new LangBank('"","en"\n"x","{{ _ENV.load(path) }}"\n');
+		try{
+			lb.get('x', {"path": __dirname+'/testdata/merge_b.csv'});
+		}catch(e){}
+		assert.deepStrictEqual(lb.getLangList(), ['en']);
+		assert.strictEqual(lb.has('onlyb'), false);
+	});
+
 	it("onMissing の戻り値は Twig で評価しない", function() {
 		var lb = new LangBank(listCsv, {
 			"onMissing": function(key){ return '{{ '+key+' }}'; }
@@ -384,6 +422,20 @@ describe('Languages', function() {
 	it("getLangList()", function() {
 		var lb = new LangBank(__dirname+'/testdata/regional.csv');
 		assert.deepStrictEqual(lb.getLangList(), ['en', 'en-US', 'ja', 'zh-Hant', 'pt']);
+	});
+
+	it("getLangList() は表記の揺れを最初の表記にまとめる", function() {
+		var lb = new LangBank([__dirname+'/testdata/header_case_a.csv', __dirname+'/testdata/header_case_b.csv']);
+		assert.deepStrictEqual(lb.getLangList(), ['en', 'ja_JP']);
+		assert.deepStrictEqual(lb.getList().bye, {"en": "Bye", "ja_JP": "さようなら"});
+	});
+
+	it("getDefaultLang()", function() {
+		var lb = new LangBank(null);
+		assert.strictEqual(lb.getDefaultLang(), null);
+		lb.load(__dirname+'/testdata/regional.csv');
+		lb.setLang('ja');
+		assert.strictEqual(lb.getDefaultLang(), 'en');
 	});
 
 	it("has()", function() {

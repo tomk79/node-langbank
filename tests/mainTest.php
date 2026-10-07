@@ -270,6 +270,54 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
+	 * onMissing が文字列以外を返したらキーを返す
+	 */
+	public function testOnMissingNotString(){
+		foreach( array(null, false, 0, array()) as $ret ){
+			$lb = new tomk79\LangBank($this->listCsv, array(
+				'onMissing' => function() use ($ret){ return $ret; },
+			));
+			$this->assertSame('undefinedKey', $lb->get('undefinedKey'));
+		}
+		$lb = new tomk79\LangBank($this->listCsv, array(
+			'onMissing' => function(){},
+		));
+		$this->assertSame('undefinedKey', $lb->get('undefinedKey'));
+		$lb = new tomk79\LangBank($this->listCsv, array(
+			'onMissing' => function(){ return ''; },
+		));
+		$this->assertSame('', $lb->get('undefinedKey'));
+	}
+
+	/**
+	 * エラーの後も描画中の状態が残らない
+	 */
+	public function testStateAfterError(){
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/env.csv', array('bind' => array('name' => 'Global')));
+		$this->assertLangBankError(function() use ($lb){
+			$lb->get('loop_a', array('name' => 'Tom'));
+		}, 'CIRCULAR_REFERENCE');
+		$this->assertSame('Hello, Global Welcome!', $lb->get('welcome'));
+		$this->assertLangBankError(function() use ($lb){
+			$lb->get('outer', array('name' => 'Tom'));
+		}, 'TEMPLATE_ERROR');
+		$this->assertSame('Hello, Global / Hello, Global', $lb->get('twice'));
+	}
+
+	/**
+	 * _ENV からファイルを読み込めない
+	 */
+	public function testEnvCannotLoad(){
+		$lb = new tomk79\LangBank('"","en"'."\n".'"x","{{ _ENV.load(path) }}"'."\n");
+		try{
+			$lb->get('x', array('path' => __DIR__.'/testdata/merge_b.csv'));
+		}catch( \Throwable $e ){
+		}
+		$this->assertSame(array('en'), $lb->getLangList());
+		$this->assertFalse($lb->has('onlyb'));
+	}
+
+	/**
 	 * Languages
 	 */
 	public function testLanguages(){
@@ -281,6 +329,18 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('xx', $lb->getLang());
 		$this->assertSame('Hello', $lb->get('hello'));
 		$this->assertSame(array('en', 'en-US', 'ja', 'zh-Hant', 'pt'), $lb->getLangList());
+
+		// 表記の揺れは最初の表記にまとめる
+		$lb = new tomk79\LangBank(array(__DIR__.'/testdata/header_case_a.csv', __DIR__.'/testdata/header_case_b.csv'));
+		$this->assertSame(array('en', 'ja_JP'), $lb->getLangList());
+		$this->assertSame(array('en' => 'Bye', 'ja_JP' => 'さようなら'), $lb->getList()['bye']);
+
+		// getDefaultLang()
+		$lb = new tomk79\LangBank(null);
+		$this->assertNull($lb->getDefaultLang());
+		$lb->load(__DIR__.'/testdata/regional.csv');
+		$lb->setLang('ja');
+		$this->assertSame('en', $lb->getDefaultLang());
 
 		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv', array('fallback' => array('zh-HK' => array('zh-Hant'))));
 		$this->assertTrue($lb->setLang('zh-HK'));

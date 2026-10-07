@@ -28,16 +28,30 @@ class sharedCasesTest extends PHPUnit\Framework\TestCase{
 		$lb = new tomk79\LangBank($source, $c['options'] ?? array());
 		$lb->setLang($c['lang']);
 
-		if( array_key_exists('bind', $c) && array_key_exists('default', $c) ){
-			$result = $lb->get($c['key'], $c['bind'], $c['default']);
-		}elseif( array_key_exists('bind', $c) ){
-			$result = $lb->get($c['key'], $c['bind']);
-		}elseif( array_key_exists('default', $c) ){
-			$result = $lb->get($c['key'], $c['default']);
-		}else{
-			$result = $lb->get($c['key']);
+		$get = function() use ($lb, $c){
+			if( array_key_exists('bind', $c) && array_key_exists('default', $c) ){
+				return $lb->get($c['key'], $c['bind'], $c['default']);
+			}elseif( array_key_exists('bind', $c) ){
+				return $lb->get($c['key'], $c['bind']);
+			}elseif( array_key_exists('default', $c) ){
+				return $lb->get($c['key'], $c['default']);
+			}
+			return $lb->get($c['key']);
+		};
+
+		if( array_key_exists('error', $c) ){
+			try{
+				$get();
+			}catch( \tomk79\LangBankException $e ){
+				$this->assertSame($c['error'], $e->getErrorCode());
+				if( array_key_exists('message', $c) ){
+					$this->assertStringContainsString($c['message'], $e->getMessage());
+				}
+				return;
+			}
+			$this->fail('LangBankException ('.$c['error'].') expected.');
 		}
-		$this->assertSame($c['expected'], $result);
+		$this->assertSame($c['expected'], $get());
 	}
 
 }

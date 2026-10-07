@@ -11,9 +11,10 @@ declare class LangBank {
 	constructor(src: LangBank.Source, callback?: (() => void) | null);
 	constructor(src: LangBank.Source, options?: LangBank.Options | null, callback?: (() => void) | null);
 
-	options: LangBank.Options;
-	defaultLang: string | null;
-	lang: string | null;
+	/** 現在の言語 (getLang() と同じ) */
+	readonly lang: string | null;
+	/** デフォルト言語 (getDefaultLang() と同じ) */
+	readonly defaultLang: string | null;
 
 	/**
 	 * 言語を設定する
@@ -22,6 +23,9 @@ declare class LangBank {
 	setLang(lang: string): boolean;
 
 	getLang(): string | null;
+
+	/** デフォルト言語 (最初に読み込んだ CSV の、最初の言語の列) */
+	getDefaultLang(): string | null;
 
 	/** 辞書にある言語の列名 */
 	getLangList(): string[];
@@ -50,7 +54,8 @@ declare class LangBank {
 }
 
 declare namespace LangBank {
-	type CsvArray = string[][];
+	type CsvCell = string | number | boolean | null | undefined;
+	type CsvArray = Array<CsvCell[] | null | undefined>;
 	type Source = string | CsvArray | Array<string | CsvArray> | null | undefined;
 	type BindData = { [key: string]: any };
 
@@ -61,8 +66,8 @@ declare namespace LangBank {
 		autoescape?: false | true | 'html' | 'js' | string;
 		/** false にすると Twig で評価しない (既定: true) */
 		twig?: boolean;
-		/** キーが未定義だった場合の戻り値を返す */
-		onMissing?: (key: string, lang: string | null) => string;
+		/** キーが未定義だった場合の戻り値を返す (文字列以外を返すとキーを使う) */
+		onMissing?: (key: string, lang: string | null) => string | void | null | undefined;
 		/** 言語ごとのフォールバック先 */
 		fallback?: { [lang: string]: string | string[] };
 	}
@@ -73,9 +78,11 @@ declare namespace LangBank {
 		| 'INVALID_SOURCE'
 		| 'INVALID_CSV'
 		| 'CSV_PARSE_ERROR'
-		| 'TEMPLATE_ERROR';
+		| 'TEMPLATE_ERROR'
+		| 'CIRCULAR_REFERENCE';
 
 	class LangBankError extends Error {
+		constructor(code: ErrorCode, message: string, cause?: unknown);
 		code: ErrorCode;
 		cause?: unknown;
 	}

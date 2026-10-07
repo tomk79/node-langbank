@@ -6,13 +6,21 @@
   "types": "libs/LangBank.d.ts",
   "exports": {
     ".": {
-      "types": "./libs/LangBank.d.ts",
-      "import": "./libs/LangBank.mjs",
-      "require": "./libs/LangBank.js"
+      "import": {
+        "types": "./libs/LangBank.d.mts",
+        "default": "./libs/LangBank.mjs"
+      },
+      "require": {
+        "types": "./libs/LangBank.d.ts",
+        "default": "./libs/LangBank.js"
+      }
     },
     "./package.json": "./package.json",
-    "./libs/*": "./libs/*"
+    "./libs/LangBank.js": "./libs/LangBank.js"
   },
+  "files": [
+    "libs/"
+  ],
   "engines": {
     "node": ">=14"
   },
