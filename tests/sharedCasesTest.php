@@ -29,7 +29,9 @@ class sharedCasesTest extends PHPUnit\Framework\TestCase{
 		$lb->setLang($c['lang']);
 
 		$get = function() use ($lb, $c){
-			if( array_key_exists('bind', $c) && array_key_exists('default', $c) ){
+			if( array_key_exists('args', $c) ){
+				return $lb->get($c['key'], ...$c['args']);
+			}elseif( array_key_exists('bind', $c) && array_key_exists('default', $c) ){
 				return $lb->get($c['key'], $c['bind'], $c['default']);
 			}elseif( array_key_exists('bind', $c) ){
 				return $lb->get($c['key'], $c['bind']);

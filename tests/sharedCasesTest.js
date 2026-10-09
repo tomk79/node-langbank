@@ -13,7 +13,9 @@ describe('Shared cases (JS/PHP 共通)', function() {
 			lb.setLang(c.lang);
 
 			function get(){
-				if( 'bind' in c && 'default' in c ){
+				if( 'args' in c ){
+					return lb.get.apply(lb, [c.key].concat(c.args));
+				}else if( 'bind' in c && 'default' in c ){
 					return lb.get(c.key, c.bind, c.default);
 				}else if( 'bind' in c ){
 					return lb.get(c.key, c.bind);

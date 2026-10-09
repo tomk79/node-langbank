@@ -5,11 +5,19 @@
 declare class LangBank {
 	/**
 	 * @param src 読み込み元 (ファイルパス, CSV 文字列, パース済みの CSV 配列, またはそれらの配列)
-	 * @param callback 初期化後に非同期で呼ばれる
-	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合
+	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合や、オプションが不正な場合
 	 */
-	constructor(src: LangBank.Source, callback?: (() => void) | null);
-	constructor(src: LangBank.Source, options?: LangBank.Options | null, callback?: (() => void) | null);
+	constructor(src: LangBank.Source, options?: LangBank.Options | null);
+	/**
+	 * @deprecated 初期化は同期で終わるので、コールバックは不要。互換のために残している
+	 * @param callback 初期化後に非同期で呼ばれる
+	 */
+	constructor(src: LangBank.Source, callback: (() => void) | null);
+	/**
+	 * @deprecated 初期化は同期で終わるので、コールバックは不要。互換のために残している
+	 * @param callback 初期化後に非同期で呼ばれる
+	 */
+	constructor(src: LangBank.Source, options: LangBank.Options | null | undefined, callback: (() => void) | null);
 
 	/** 現在の言語 (getLang() と同じ) */
 	readonly lang: string | null;
@@ -20,7 +28,7 @@ declare class LangBank {
 	 * 言語を設定する
 	 * @returns 辞書にその言語 (またはフォールバック先) があれば true
 	 */
-	setLang(lang: string): boolean;
+	setLang(lang: string | null): boolean;
 
 	getLang(): string | null;
 
@@ -33,15 +41,19 @@ declare class LangBank {
 	/**
 	 * 訳文を取得する
 	 *
-	 * 第 2 引数が文字列ならデフォルト値、それ以外ならバインドデータとして扱う。
+	 * 第 2 引数が文字列で、第 3 引数が null か undefined なら、第 2 引数をデフォルト値として扱う。
 	 * キーが未定義で、デフォルト値がなければ onMissing の戻り値、またはキーを返す。
 	 */
-	get(key: string): string;
-	get(key: string, defaultValue: string): string;
-	get(key: string, bindData: LangBank.BindData | null, defaultValue?: string | null): string;
+	get(key: LangBank.Key): string;
+	get(key: LangBank.Key, defaultValue: string): string;
+	get(key: LangBank.Key, bindData: LangBank.BindData | null | undefined, defaultValue?: string | null): string;
+	get(key: LangBank.Key, bindDataOrDefault?: LangBank.BindData | string | null, defaultValue?: string | null): string;
 
-	/** 現在の言語 (フォールバックを含む) で訳文が見つかれば true */
-	has(key: string): boolean;
+	/** 現在の言語 (既定ではフォールバックを含む) で訳文が見つかれば true */
+	has(key: LangBank.Key, options?: LangBank.HasOptions | null): boolean;
+
+	/** 言語を固定した、読み取り専用のビュー。辞書は共有する */
+	withLang(lang: string | null): LangBank.View;
 
 	/** 辞書のコピー */
 	getList(): { [key: string]: { [lang: string]: string } };
@@ -49,27 +61,51 @@ declare class LangBank {
 	/** 辞書を追加で読み込み、セル単位の後勝ちでマージする */
 	load(src: LangBank.Source): this;
 
-	/** 自身で resolve する Promise */
+	/**
+	 * 自身で resolve する Promise
+	 * @deprecated 初期化は同期で終わるので、待つ必要はない。互換のために残している
+	 */
 	ready(): Promise<this>;
 }
 
 declare namespace LangBank {
 	type CsvCell = string | number | boolean | null | undefined;
 	type CsvArray = Array<CsvCell[] | null | undefined>;
-	type Source = string | CsvArray | Array<string | CsvArray> | null | undefined;
+	type Source = string | CsvArray | Array<string | CsvArray | null | undefined> | null | undefined;
 	type BindData = { [key: string]: any };
+	/** キー (数値は文字列にして探す) */
+	type Key = string | number;
+	type AutoescapeStrategy = 'html' | 'js' | 'css' | 'url' | 'html_attr';
 
 	interface Options {
 		/** すべての get() でバインドするデータ */
-		bind?: BindData;
-		/** HTML エスケープの戦略 (既定: false) */
-		autoescape?: false | true | 'html' | 'js' | string;
+		bind?: BindData | null;
+		/** HTML エスケープの戦略 (既定: false。true は 'html') */
+		autoescape?: boolean | AutoescapeStrategy | null;
 		/** false にすると Twig で評価しない (既定: true) */
-		twig?: boolean;
+		twig?: boolean | null;
 		/** キーが未定義だった場合の戻り値を返す (文字列以外を返すとキーを使う) */
-		onMissing?: (key: string, lang: string | null) => string | void | null | undefined;
+		onMissing?: ((key: string, lang: string | null) => string | void | null | undefined) | null;
 		/** 言語ごとのフォールバック先 */
-		fallback?: { [lang: string]: string | string[] };
+		fallback?: { [lang: string]: string | string[] } | null;
+	}
+
+	interface HasOptions {
+		/** false にすると、その言語の列だけを探す (既定: true) */
+		fallback?: boolean | null;
+	}
+
+	/** withLang() が返す、言語を固定したビュー。テンプレートの _ENV と同じ形 */
+	interface View {
+		readonly lang: string | null;
+		readonly defaultLang: string | null;
+		get(key: Key): string;
+		get(key: Key, defaultValue: string): string;
+		get(key: Key, bindData: BindData | null | undefined, defaultValue?: string | null): string;
+		get(key: Key, bindDataOrDefault?: BindData | string | null, defaultValue?: string | null): string;
+		has(key: Key, options?: HasOptions | null): boolean;
+		getLang(): string | null;
+		getDefaultLang(): string | null;
 	}
 
 	type ErrorCode =
@@ -79,12 +115,22 @@ declare namespace LangBank {
 		| 'INVALID_CSV'
 		| 'CSV_PARSE_ERROR'
 		| 'TEMPLATE_ERROR'
-		| 'CIRCULAR_REFERENCE';
+		| 'CIRCULAR_REFERENCE'
+		| 'INVALID_OPTION';
 
 	class LangBankError extends Error {
 		constructor(code: ErrorCode, message: string, cause?: unknown);
 		code: ErrorCode;
 		cause?: unknown;
+
+		static readonly FILE_NOT_FOUND: 'FILE_NOT_FOUND';
+		static readonly FILE_READ_ERROR: 'FILE_READ_ERROR';
+		static readonly INVALID_SOURCE: 'INVALID_SOURCE';
+		static readonly INVALID_CSV: 'INVALID_CSV';
+		static readonly CSV_PARSE_ERROR: 'CSV_PARSE_ERROR';
+		static readonly TEMPLATE_ERROR: 'TEMPLATE_ERROR';
+		static readonly CIRCULAR_REFERENCE: 'CIRCULAR_REFERENCE';
+		static readonly INVALID_OPTION: 'INVALID_OPTION';
 	}
 }
 

@@ -9,36 +9,42 @@ namespace tomk79;
  */
 class LangBank{
 
-	private $pathCsv;
-	private $options = array();
-	private $langDb = array();
-	private $langList = array();
-	private $langMap = array(); // 正規化した言語コード => 列名
-	private $renderStack = array(); // 描画中の get() の {key, bind, error}
-	public $defaultLang;
-	public $lang;
+	/** options.autoescape に指定できるエスケープの戦略 */
+	private const AUTOESCAPE_STRATEGIES = array('html', 'js', 'css', 'url', 'html_attr');
+
+	/** オプションの名前 */
+	private const OPTION_NAMES = array('bind', 'autoescape', 'twig', 'onMissing', 'fallback');
+
+	private mixed $pathCsv;
+	private array $options = array();
+	private array $langDb = array();
+	private array $langList = array();
+	private array $langMap = array(); // 正規化した言語コード => 列名
+	private array $renderStack = array(); // 描画中の get() の {key, lang, bind, error}
+	public ?string $defaultLang = null;
+	public ?string $lang = null;
 
 	/**
 	 * constructor
 	 *
-	 * @param mixed $csv 読み込み元 (ファイルパス, CSV文字列, パース済みのCSV配列, またはそれらの配列)
-	 * @param array $options オプション
+	 * @param mixed $source 読み込み元 (ファイルパス, CSV文字列, パース済みのCSV配列, またはそれらの配列)
+	 * @param array|null $options オプション
 	 */
-	public function __construct( $csv, $options = array() ){
-		$this->pathCsv = $csv;
-		$this->options = is_array($options) ? $options : array();
+	public function __construct( mixed $source, ?array $options = null ){
+		$this->pathCsv = $source;
+		$this->options = $this->normalizeOptions($options ?? array());
 
-		$this->load($csv);
+		$this->load($source);
 	}
 
 	/**
 	 * load additional words
 	 *
-	 * @param mixed $csv 読み込み元
-	 * @return LangBank 自身
+	 * @param mixed $source 読み込み元
+	 * @return static 自身
 	 */
-	public function load( $csv ){
-		foreach( $this->toCsvArrays($csv) as $csvAry ){
+	public function load( mixed $source ): static{
+		foreach( $this->toCsvArrays($source) as $csvAry ){
 			$this->mergeCsv($csvAry);
 		}
 		return $this;
@@ -47,12 +53,12 @@ class LangBank{
 	/**
 	 * set Language
 	 *
-	 * @param string $lang 言語コード
-	 * @return boolean 辞書にその言語 (またはフォールバック先) があれば true
+	 * @param string|null $lang 言語コード
+	 * @return bool 辞書にその言語 (またはフォールバック先) があれば true
 	 */
-	public function setLang($lang){
+	public function setLang( ?string $lang ): bool{
 		$this->lang = $lang;
-		return count($this->resolveLangs($lang, false)) > 0;
+		return count($this->resolveLangs($lang, true, false)) > 0;
 	}
 
 	/**
@@ -60,7 +66,7 @@ class LangBank{
 	 *
 	 * @return string|null 現在の言語
 	 */
-	public function getLang(){
+	public function getLang(): ?string{
 		return $this->lang;
 	}
 
@@ -69,7 +75,7 @@ class LangBank{
 	 *
 	 * @return string|null デフォルト言語 (最初に読み込んだ CSV の、最初の言語の列)
 	 */
-	public function getDefaultLang(){
+	public function getDefaultLang(): ?string{
 		return $this->defaultLang;
 	}
 
@@ -78,64 +84,147 @@ class LangBank{
 	 *
 	 * @return array 辞書にある言語の列名
 	 */
-	public function getLangList(){
+	public function getLangList(): array{
 		return $this->langList;
 	}
 
 	/**
 	 * get word by key
 	 *
-	 * @param string $key キー
-	 * @param array|object|null $bindData バインドデータ(省略可)
-	 * @param string $defaultValue デフォルト(キーが未定義だった場合)の戻り値
+	 * 第 2 引数が文字列で、第 3 引数が null なら、第 2 引数をデフォルト値として扱う。
+	 *
+	 * @param string|int $key キー
+	 * @param mixed $bindData バインドデータ (配列またはオブジェクト), またはデフォルト値
+	 * @param mixed $defaultValue デフォルト(キーが未定義だった場合)の戻り値。文字列以外は指定なしとして扱う
 	 * @return string 設定された言語に対応する文字列
 	 */
-	public function get($key){
-		$bindData = null;
-		$defaultValue = null;
-
-		$args = func_get_args();
-		if( count($args) == 2 ){
-			if( is_string($args[1]) ){
-				$defaultValue = $args[1];
-			}else{
-				$bindData = $args[1];
-			}
-		}elseif( count($args) >= 3 ){
-			$bindData = $args[1];
-			$defaultValue = $args[2];
-		}
-
-		$key = ''.$key;
-		try{
-			return $this->getWord($key, $bindData, $defaultValue);
-		}catch( LangBankException $e ){
-			$parent = end($this->renderStack);
-			if( $parent && !$parent->error ){
-				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
-				$parent->error = $e;
-			}
-			throw $e;
-		}
+	public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ): string{
+		return $this->getFor($this->lang, $key, $bindData, $defaultValue)->text;
 	}
 
 	/**
 	 * has word
 	 *
-	 * @param string $key キー
-	 * @return boolean 現在の言語 (フォールバックを含む) で訳文が見つかれば true
+	 * @param string|int $key キー
+	 * @param array|null $options オプション (`fallback`: false にすると、現在の言語の列だけを探す)
+	 * @return bool 現在の言語 (フォールバックを含む) で訳文が見つかれば true
 	 */
-	public function has($key){
-		return !is_null($this->findValue(''.$key));
+	public function has( string|int $key, ?array $options = null ): bool{
+		return $this->hasFor($this->lang, $key, $options);
+	}
+
+	/**
+	 * 言語を固定したビューを返す
+	 *
+	 * @param string|null $lang 言語コード
+	 * @return LangBankView 辞書を共有する、読み取り専用のビュー
+	 */
+	public function withLang( ?string $lang ): LangBankView{
+		return new LangBankView(
+			$lang,
+			function( $key, $bindData, $defaultValue ) use ( $lang ){
+				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
+			},
+			function( $key, $options ) use ( $lang ){
+				return $this->hasFor($lang, $key, $options);
+			},
+			function(){
+				return $this->defaultLang;
+			}
+		);
 	}
 
 	/**
 	 * get word list
+	 *
+	 * @return array 辞書 (`[key => [lang => word]]`)
 	 */
-	public function getList(){
+	public function getList(): array{
 		return $this->langDb;
 	}
 
+
+	/**
+	 * オプションを検証し、正規化する
+	 */
+	private function normalizeOptions( array $options ): array{
+		$rtn = array();
+		foreach( $options as $name => $value ){
+			if( !in_array($name, self::OPTION_NAMES, true) ){
+				throw new LangBankException('INVALID_OPTION', 'Unknown option: '.$name);
+			}
+			if( is_null($value) ){
+				continue;
+			}
+			switch( $name ){
+				case 'bind':
+					if( !is_array($value) && !is_object($value) ){
+						throw new LangBankException('INVALID_OPTION', 'Option "bind" must be an array or an object.');
+					}
+					break;
+				case 'autoescape':
+					if( $value === true ){
+						$value = 'html';
+					}elseif( $value !== false && !in_array($value, self::AUTOESCAPE_STRATEGIES, true) ){
+						throw new LangBankException('INVALID_OPTION', 'Option "autoescape" must be false, true, or one of: '.implode(', ', self::AUTOESCAPE_STRATEGIES).'.');
+					}
+					break;
+				case 'twig':
+					if( !is_bool($value) ){
+						throw new LangBankException('INVALID_OPTION', 'Option "twig" must be a boolean.');
+					}
+					break;
+				case 'onMissing':
+					if( !is_callable($value) ){
+						throw new LangBankException('INVALID_OPTION', 'Option "onMissing" must be a callable.');
+					}
+					break;
+				case 'fallback':
+					if( !is_array($value) ){
+						throw new LangBankException('INVALID_OPTION', 'Option "fallback" must be an array.');
+					}
+					$fallback = array();
+					foreach( $value as $lang => $langs ){
+						$langs = is_string($langs) ? array($langs) : $langs;
+						if( !is_array($langs) || count(array_filter($langs, 'is_string')) !== count($langs) ){
+							throw new LangBankException('INVALID_OPTION', 'Option "fallback" must map a language to a string or an array of strings: '.$lang);
+						}
+						$fallback[$lang] = array_values($langs);
+					}
+					$value = $fallback;
+					break;
+			}
+			$rtn[$name] = $value;
+		}
+		return $rtn;
+	}
+
+	/**
+	 * has() のオプションを検証し、フォールバックするかどうかを返す
+	 */
+	private function useFallbackForHas( ?array $options ): bool{
+		$fallback = true;
+		foreach( $options ?? array() as $name => $value ){
+			if( $name !== 'fallback' ){
+				throw new LangBankException('INVALID_OPTION', 'Unknown option of has(): '.$name);
+			}
+			if( is_null($value) ){
+				continue;
+			}
+			if( !is_bool($value) ){
+				throw new LangBankException('INVALID_OPTION', 'Option "fallback" of has() must be a boolean.');
+			}
+			$fallback = $value;
+		}
+		return $fallback;
+	}
+
+	/**
+	 * 空の読み込み元か (読み込み元のリストの中では読み飛ばす)
+	 */
+	private function isEmptySource( $value ){
+		return is_null($value) || $value === '' || $value === array();
+	}
 
 	/**
 	 * 読み込み元を、パース済みCSV配列のリストにする
@@ -150,7 +239,7 @@ class LangBank{
 		if( is_array($csv) ){
 			$isSourceList = count($csv) > 0;
 			foreach( $csv as $item ){
-				if( !is_string($item) && !$this->is2dArray($item) ){
+				if( !$this->isEmptySource($item) && !is_string($item) && !$this->is2dArray($item) ){
 					$isSourceList = false;
 					break;
 				}
@@ -314,8 +403,10 @@ class LangBank{
 
 	/**
 	 * 言語の候補を、辞書の列名のリストにする
+	 *
+	 * $useFallback が false なら、その言語の列だけを探す。
 	 */
-	private function resolveLangs( $lang, $includeDefault ){
+	private function resolveLangs( $lang, $useFallback, $includeDefault ){
 		$candidates = array();
 		$add = function($l) use (&$candidates){
 			$normalized = $this->normalizeLang($l);
@@ -326,16 +417,15 @@ class LangBank{
 
 		if( ''.$lang !== '' ){
 			$add($lang);
+		}
 
-			$fallback = $this->options['fallback'] ?? null;
-			if( is_array($fallback) ){
-				foreach( $fallback as $fallbackKey => $langs ){
-					if( $this->normalizeLang($fallbackKey) !== $this->normalizeLang($lang) ){
-						continue;
-					}
-					foreach( (is_array($langs) ? $langs : array($langs)) as $l ){
-						$add($l);
-					}
+		if( $useFallback && ''.$lang !== '' ){
+			foreach( $this->options['fallback'] ?? array() as $fallbackKey => $langs ){
+				if( $this->normalizeLang($fallbackKey) !== $this->normalizeLang($lang) ){
+					continue;
+				}
+				foreach( $langs as $l ){
+					$add($l);
 				}
 			}
 
@@ -359,14 +449,14 @@ class LangBank{
 	}
 
 	/**
-	 * 現在の言語で訳文を探す (見つからなければ null)
+	 * 指定した言語で訳文を探す (見つからなければ null)
 	 */
-	private function findValue( $key ){
+	private function findValue( $key, $lang, $useFallback ){
 		if( !array_key_exists($key, $this->langDb) ){
 			return null;
 		}
-		foreach( $this->resolveLangs($this->lang, true) as $lang ){
-			$value = $this->langDb[$key][$lang] ?? null;
+		foreach( $this->resolveLangs($lang, $useFallback, $useFallback) as $column ){
+			$value = $this->langDb[$key][$column] ?? null;
 			if( is_string($value) && $value !== '' ){
 				return $value;
 			}
@@ -375,9 +465,40 @@ class LangBank{
 	}
 
 	/**
+	 * 指定した言語で get() する
+	 *
+	 * 戻り値は {text, trusted}。trusted は、訳文かデフォルト値から作った文字列なら true。
+	 * (キーそのものや onMissing の戻り値は、テンプレートの中で安全な文字列として扱わない)
+	 */
+	private function getFor( ?string $lang, $key, $bindData, $defaultValue ): object{
+		if( is_string($bindData) && is_null($defaultValue) ){
+			// 第 2 引数の文字列はデフォルト値
+			$defaultValue = $bindData;
+			$bindData = null;
+		}
+		try{
+			return $this->getWord(''.$key, $bindData, $defaultValue, $lang);
+		}catch( LangBankException $e ){
+			$parent = end($this->renderStack);
+			if( $parent && !$parent->error ){
+				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
+				$parent->error = $e;
+			}
+			throw $e;
+		}
+	}
+
+	/**
+	 * 指定した言語で has() する
+	 */
+	private function hasFor( ?string $lang, $key, ?array $options ): bool{
+		return !is_null($this->findValue(''.$key, $lang, $this->useFallbackForHas($options)));
+	}
+
+	/**
 	 * get() の本体
 	 */
-	private function getWord( $key, $bindData, $defaultValue ){
+	private function getWord( $key, $bindData, $defaultValue, $lang ){
 		$path = array();
 		foreach( $this->renderStack as $frame ){
 			$path[] = $frame->key;
@@ -389,27 +510,26 @@ class LangBank{
 			throw new LangBankException('CIRCULAR_REFERENCE', 'Circular reference: '.implode(' -> ', $path));
 		}
 
-		$value = $this->findValue($key);
+		$value = $this->findValue($key, $lang, true);
 		if( !is_null($value) ){
-			return $this->render($value, $bindData, $key);
+			return (object) array('text' => $this->render($value, $bindData, $key, $lang), 'trusted' => true);
 		}
 		if( is_string($defaultValue) ){
-			return $this->render($defaultValue, $bindData, $key);
+			return (object) array('text' => $this->render($defaultValue, $bindData, $key, $lang), 'trusted' => true);
 		}
-		$onMissing = $this->options['onMissing'] ?? null;
-		if( is_callable($onMissing) ){
-			$missing = call_user_func($onMissing, $key, $this->lang);
+		if( isset($this->options['onMissing']) ){
+			$missing = call_user_func($this->options['onMissing'], $key, $lang);
 			if( is_string($missing) ){
-				return $missing;
+				return (object) array('text' => $missing, 'trusted' => false);
 			}
 		}
-		return $key;
+		return (object) array('text' => $key, 'trusted' => false);
 	}
 
 	/**
 	 * Twig テンプレートを評価する
 	 */
-	private function render( $template, $bindData, $key ){
+	private function render( $template, $bindData, $key, $lang ){
 		if( ($this->options['twig'] ?? true) === false || !preg_match('/\{[\{\%\#]/', $template) ){
 			return $template;
 		}
@@ -423,14 +543,11 @@ class LangBank{
 			}
 		}
 		$data = $bind;
-		$data['_ENV'] = $this->createTemplateEnv();
+		$data['_ENV'] = $this->createTemplateEnv($lang);
 
 		$autoescape = $this->options['autoescape'] ?? false;
-		if( $autoescape === true ){
-			$autoescape = 'html';
-		}
 
-		$frame = (object) array('key' => $key, 'bind' => $bind, 'error' => null);
+		$frame = (object) array('key' => $key, 'lang' => $lang, 'bind' => $bind, 'error' => null);
 		$this->renderStack[] = $frame;
 		try{
 			// Twig はコンパイル済みのクラスを テンプレート名とソース で識別するため、
@@ -448,7 +565,7 @@ class LangBank{
 				// 入れ子の get() で起きたエラーは、包み直さずにそのまま投げる
 				throw $frame->error;
 			}
-			throw new LangBankException('TEMPLATE_ERROR', 'Failed to render template of key "'.$key.'" (lang: '.$this->lang.'): '.$e->getMessage(), $e);
+			throw new LangBankException('TEMPLATE_ERROR', 'Failed to render template of key "'.$key.'" (lang: '.$lang.'): '.$e->getMessage(), $e);
 		}finally{
 			array_pop($this->renderStack);
 		}
@@ -458,25 +575,35 @@ class LangBank{
 	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
 	 *
 	 * Twig は `_ENV.lang` を getLang() で解決する。
+	 * autoescape が有効なら、訳文やデフォルト値から作った get() の結果を安全な文字列 (\Twig\Markup) で返し、
+	 * 二重にエスケープされないようにする。キーそのものや onMissing の戻り値は、外側のテンプレートでエスケープさせる。
 	 * (無名クラスは serialize() できないため、プロパティには保存しない)
 	 */
-	private function createTemplateEnv(){
-		return new class($this){
-			private $lb;
-			public function __construct( $lb ){
-				$this->lb = $lb;
+	private function createTemplateEnv( $lang ){
+		$getFn = function( $key, $bindData, $defaultValue ) use ( $lang ){
+			return $this->getFor($lang, $key, $bindData, $defaultValue);
+		};
+		return new class($this->withLang($lang), $getFn, ($this->options['autoescape'] ?? false) !== false){
+			private $view;
+			private $getFn;
+			private $markup;
+			public function __construct( $view, $getFn, $markup ){
+				$this->view = $view;
+				$this->getFn = $getFn;
+				$this->markup = $markup;
 			}
-			public function get( $key ){
-				return call_user_func_array(array($this->lb, 'get'), func_get_args());
+			public function get( $key, $bindData = null, $defaultValue = null ){
+				$result = ($this->getFn)($key, $bindData, $defaultValue);
+				return ($this->markup && $result->trusted) ? new \Twig\Markup($result->text, 'UTF-8') : $result->text;
 			}
-			public function has( $key ){
-				return $this->lb->has($key);
+			public function has( $key, $options = null ){
+				return $this->view->has($key, $options);
 			}
 			public function getLang(){
-				return $this->lb->getLang();
+				return $this->view->getLang();
 			}
 			public function getDefaultLang(){
-				return $this->lb->getDefaultLang();
+				return $this->view->getDefaultLang();
 			}
 		};
 	}

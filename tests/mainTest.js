@@ -275,7 +275,7 @@ describe('Errors', function() {
 
 	it("不正な CSV 配列は INVALID_SOURCE", function() {
 		[
-			[listCsv, undefined],
+			[listCsv, undefined, 1],
 			[["", "en"], "row"],
 			[["", "en"], ["k", ["a", "b"]]],
 			[["", "en"], ["k", {"a": 1}]]
@@ -454,6 +454,176 @@ describe('Languages', function() {
 		list.newKey = {"en": "new"};
 		assert.strictEqual(lb.get('hello'), 'Hello');
 		assert.strictEqual(lb.get('newKey'), 'newKey');
+	});
+
+});
+
+describe('Interface', function() {
+
+	it("get() はラッパー関数から引数をそのまま渡せる", function() {
+		var lb = new LangBank(listCsv);
+		function t(key, a, b){
+			return lb.get(key, a, b);
+		}
+		assert.strictEqual(t('undefinedKey', 'DEF'), 'DEF');
+		assert.strictEqual(t('undefinedKey', 'DEF', null), 'DEF');
+		assert.strictEqual(t('bind1', {"test1": "x"}), 'test x');
+		assert.strictEqual(t('undefinedKey', null, 'D'), 'D');
+		assert.strictEqual(t('hello'), 'Hello');
+	});
+
+	it("不正なオプションは INVALID_OPTION", function() {
+		['x', 1, true, []].forEach(function(options){
+			assertLangBankError(function(){
+				new LangBank(listCsv, options);
+			}, 'INVALID_OPTION');
+		});
+		[
+			{"unknown": 1},
+			{"onmissing": function(){}},
+			{"bind": "x"},
+			{"bind": []},
+			{"autoescape": "xml"},
+			{"autoescape": 1},
+			{"twig": "false"},
+			{"onMissing": "f"},
+			{"fallback": []},
+			{"fallback": {"ja": 1}},
+			{"fallback": {"ja": ["en", 1]}}
+		].forEach(function(options){
+			assertLangBankError(function(){
+				new LangBank(listCsv, options);
+			}, 'INVALID_OPTION');
+		});
+		assert.throws(function(){
+			new LangBank(listCsv, {"onmissing": function(){}});
+		}, /onmissing/);
+	});
+
+	it("null や undefined のオプションは指定なしとして扱う", function() {
+		var lb = new LangBank(listCsv, {"bind": null, "autoescape": null, "twig": undefined, "onMissing": null, "fallback": null});
+		assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
+		lb = new LangBank(listCsv, null, null);
+		assert.strictEqual(lb.get('hello'), 'Hello');
+	});
+
+	it("autoescape: true は html", function() {
+		var lb = new LangBank(__dirname+'/testdata/escape.csv', {"autoescape": true});
+		assert.strictEqual(lb.get('greet', {"name": "<b>"}), 'Hi &lt;b&gt;');
+	});
+
+	it("fallback の値には文字列も書ける", function() {
+		var lb = new LangBank(__dirname+'/testdata/regional.csv', {"fallback": {"zh-HK": "zh-Hant"}});
+		lb.setLang('zh-HK');
+		assert.strictEqual(lb.get('hello'), '你好');
+	});
+
+	it("構築した後に options を書き換えても影響しない", function() {
+		var options = {"bind": {"test1": "A"}, "fallback": {"zh-HK": ["zh-Hant"]}};
+		var lb = new LangBank([listCsv, __dirname+'/testdata/regional.csv'], options);
+		options.bind.test1 = 'B';
+		options.fallback['zh-HK'].push('pt');
+		options.twig = false;
+		assert.strictEqual(lb.get('bind1'), 'test A');
+		lb.setLang('zh-HK');
+		assert.strictEqual(lb.get('color'), '顏色');
+	});
+
+	it("読み込み元のリストの中の空の要素を読み飛ばす", function() {
+		var lb = new LangBank([listCsv, null, undefined, '', []]);
+		assert.strictEqual(lb.get('hello'), 'Hello');
+		lb = new LangBank([null]);
+		assert.deepStrictEqual(lb.getLangList(), []);
+		lb.load([undefined, __dirname+'/testdata/regional.csv']);
+		assert.strictEqual(lb.getDefaultLang(), 'en');
+	});
+
+	it("has() の fallback オプション", function() {
+		var lb = new LangBank(__dirname+'/testdata/regional.csv');
+		lb.setLang('en-GB');
+		assert.strictEqual(lb.has('color'), true);
+		assert.strictEqual(lb.has('color', {"fallback": false}), false);
+		lb.setLang('ja_JP');
+		assert.strictEqual(lb.has('hello', {"fallback": false}), false);
+		lb.setLang('JA');
+		assert.strictEqual(lb.has('hello', {"fallback": false}), true);
+		lb.setLang('en-US');
+		assert.strictEqual(lb.has('hello', {"fallback": false}), false);
+		assert.strictEqual(lb.has('hello', {"fallback": null}), true);
+		assert.strictEqual(lb.has('hello', {"fallback": true}), true);
+		[{"x": 1}, {"fallback": "no"}, 'x'].forEach(function(options){
+			assertLangBankError(function(){
+				lb.has('hello', options);
+			}, 'INVALID_OPTION');
+		});
+	});
+
+	it("_ENV.get() が返した onMissing の戻り値はエスケープする", function() {
+		var lb = new LangBank(__dirname+'/testdata/escape.csv', {
+			"autoescape": "html",
+			"onMissing": function(key){ return '<i>'+key+'</i>'; }
+		});
+		assert.strictEqual(lb.get('dynamic', {"name": "x"}), '[&lt;i&gt;x&lt;/i&gt;]');
+		assert.strictEqual(lb.get('nope'), '<i>nope</i>');
+	});
+
+	it("エラーコードの定数", function() {
+		[
+			'FILE_NOT_FOUND', 'FILE_READ_ERROR', 'INVALID_SOURCE', 'INVALID_CSV',
+			'CSV_PARSE_ERROR', 'TEMPLATE_ERROR', 'CIRCULAR_REFERENCE', 'INVALID_OPTION'
+		].forEach(function(code){
+			assert.strictEqual(LangBank.LangBankError[code], code);
+		});
+	});
+
+	it("withLang() は言語を固定したビューを返す", function() {
+		var lb = new LangBank(__dirname+'/testdata/regional.csv');
+		var ja = lb.withLang('ja');
+		assert.strictEqual(ja.get('hello'), 'こんにちは');
+		assert.strictEqual(lb.get('hello'), 'Hello');
+		lb.setLang('pt');
+		assert.strictEqual(ja.get('hello'), 'こんにちは');
+		assert.strictEqual(ja.getLang(), 'ja');
+		assert.strictEqual(ja.lang, 'ja');
+		assert.strictEqual(ja.getDefaultLang(), 'en');
+		assert.strictEqual(ja.defaultLang, 'en');
+		assert.strictEqual(ja.has('color'), true);
+		assert.strictEqual(ja.has('color', {"fallback": false}), true);
+		assert.strictEqual(ja.get('undefinedKey', 'DEF'), 'DEF');
+		assert.ok(Object.isFrozen(ja));
+		assert.strictEqual(typeof(ja.setLang), 'undefined');
+		assert.strictEqual(typeof(ja.load), 'undefined');
+
+		// 辞書は共有する
+		lb.load('"","ja"'+"\n"+'"new","新規"'+"\n");
+		assert.strictEqual(ja.get('new'), '新規');
+
+		// 言語なしはデフォルト言語。文字列以外は文字列にする
+		assert.strictEqual(lb.withLang(null).getLang(), null);
+		assert.strictEqual(lb.withLang().lang, null);
+		assert.strictEqual(lb.withLang().get('hello'), 'Hello');
+		assert.strictEqual(lb.withLang(123).getLang(), '123');
+		assert.strictEqual(new LangBank(__dirname+'/testdata/env.csv').withLang(null).get('nokey', null, '{{ _ENV.lang }}/{{ _ENV.defaultLang }}/'), '/en/');
+	});
+
+	it("withLang() のビューから描画すると _ENV はビューの言語", function() {
+		var lb = new LangBank(__dirname+'/testdata/env.csv');
+		assert.strictEqual(lb.withLang('ja').get('env'), 'ja/en/ja/en/yes');
+		assert.strictEqual(lb.get('env'), 'en/en/en/en/yes');
+		assert.strictEqual(lb.withLang('ja').get('welcome', {"name": "Tom"}), 'Hello, Tom Welcome!');
+	});
+
+	it("withLang() のビューでも onMissing に言語を渡し、循環参照を検出する", function() {
+		var log = [];
+		var lb = new LangBank(__dirname+'/testdata/env.csv', {
+			"onMissing": function(key, lang){ log.push(key+':'+lang); }
+		});
+		assert.strictEqual(lb.withLang('fr').get('nope'), 'nope');
+		assert.deepStrictEqual(log, ['nope:fr']);
+		assertLangBankError(function(){
+			lb.withLang('ja').get('loop_a');
+		}, 'CIRCULAR_REFERENCE');
+		assert.strictEqual(lb.withLang('ja').get('welcome'), 'Hello,  Welcome!');
 	});
 
 });

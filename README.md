@@ -43,17 +43,7 @@ lb.setLang('ja');
 console.log( lb.get('hello') ); // <- "こんにちわ"
 ```
 
-The constructor loads the dictionary synchronously. The callback style of v0.x and a Promise style are also available:
-
-```js
-const lb = new LangBank('/path/to/list.csv', function(){
-	lb.setLang('en');
-	console.log( lb.get('hello') ); // <- "Hello"
-});
-
-const lb2 = new LangBank('/path/to/list.csv');
-await lb2.ready();
-```
+The constructor loads the dictionary synchronously, so you can use it right away. The callback style of v0.x (`new LangBank(source, options, callback)`) and `ready()` still work, but they are deprecated.
 
 PHP:
 
@@ -75,13 +65,14 @@ The 1st argument of the constructor (and of `load()`) accepts the following. Nod
 | A string that contains a line break (`\n` or `\r`) | CSV text. |
 | A string without line breaks | A file path. Throws `FILE_NOT_FOUND` if the file does not exist. |
 | A 2-dimensional array | Parsed CSV rows. Each row must be an array (or `null`), and each cell must be a scalar value (or `null`). |
-| An array of the above (strings and/or 2-dimensional arrays) | Multiple sources, merged in order. |
+| An array of the above (strings and/or 2-dimensional arrays) | Multiple sources, merged in order. `null`, `undefined`, `''` and `[]` in the array are skipped. |
 
 ```js
 new LangBank('/path/to/list.csv');
 new LangBank('"","en","ja"\n"hello","Hello","こんにちは"');
 new LangBank([["", "en", "ja"], ["hello", "Hello", "こんにちは"]]);
 new LangBank(['/path/to/common.csv', '/path/to/app.csv']);
+new LangBank(['/path/to/common.csv', isDev ? '/path/to/dev.csv' : null]);
 ```
 
 - A UTF-8 BOM, and CRLF or CR line breaks are accepted. Rows may have different numbers of columns.
@@ -115,6 +106,13 @@ lb.get(key, {name: 'Tom'}, 'default value');
 lb.get(key, null, 'default value');
 ```
 
+When the 2nd argument is a string and the 3rd argument is `null` or `undefined`, the 2nd argument is the default value. So a wrapper function can pass its arguments as they are:
+
+```js
+function t(key, a, b){ return lb.get(key, a, b); }
+t('hello', 'default value'); // same as lb.get('hello', 'default value')
+```
+
 The default value must be a string. Any other type (`null`, `false`, a number, ...) is treated as not given.
 
 ### Fallback of languages
@@ -141,6 +139,16 @@ The languages in `options.fallback` are looked up as written: their subtags are 
 
 `setLang()` always sets the language, and returns `false` if the dictionary has neither the language nor any of its fallback languages (except the default language). `getLangList()` returns the languages in the dictionary.
 
+`has(key)` also looks for the word in the same order. To check whether the word is translated into the current language itself, pass `{"fallback": false}`:
+
+```js
+lb.setLang('ja');
+lb.has('hello');                      // <- true, even if only the default language has it
+lb.has('hello', {"fallback": false}); // <- true only if the "ja" column has it
+```
+
+With `{"fallback": false}`, only the column of the current language (compared case-insensitively, `_` as `-`) is looked up: neither `options.fallback`, the parent languages, nor the default language.
+
 ### Missing keys
 
 When no word is found, `get()` returns:
@@ -159,6 +167,22 @@ const lb = new LangBank('/path/to/list.csv', {
 });
 lb.has('hello'); // <- true if a word is found
 ```
+
+
+## withLang()
+
+`withLang(lang)` returns a read-only view of the dictionary in the given language. It is useful when one LangBank object is shared, for example by the requests of a web server: `setLang()` changes the language for all of them, but a view does not.
+
+```js
+const lb = new LangBank('/path/to/list.csv');
+
+app.get('/', function(req, res){
+	const t = lb.withLang(req.query.lang);
+	res.send( t.get('hello') );
+});
+```
+
+A view has `get()`, `has()`, `getLang()` and `getDefaultLang()` (and the read-only properties `lang` and `defaultLang` in NodeJS). It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object.
 
 
 ## Using Twig
@@ -192,7 +216,7 @@ lb.get('undefinedKey', {"name": "Tom"}, 'Hello, {{ name }}!'); // <- "Hello, Tom
 
 ### \_ENV in Twig
 
-A read-only view of the LangBank object is accessible in Twig templates as `_ENV`. It has `lang`, `defaultLang`, `get()`, `has()`, `getLang()` and `getDefaultLang()`. Other methods (`setLang()`, `load()`, ...) are not available.
+A read-only view of the LangBank object is accessible in Twig templates as `_ENV`. It is the same as the view of [`withLang()`](#withlang) in the language of the outer `get()`: it has `lang`, `defaultLang`, `get()`, `has()`, `getLang()` and `getDefaultLang()`. Other methods (`setLang()`, `load()`, ...) are not available.
 
 ```csv
 "","en"
@@ -228,7 +252,22 @@ Or disable Twig entirely with `"twig": false`.
 
 ### HTML escaping
 
-By default, words are **not** HTML-escaped: LangBank returns plain strings, and escaping is the job of the output side (your template engine, etc.). To escape the bound values in the Twig templates, set `"autoescape": "html"`.
+By default, words are **not** HTML-escaped: LangBank returns plain strings, and escaping is the job of the output side (your template engine, etc.). To escape the bound values in the Twig templates, set `"autoescape": "html"` (or `true`). The other strategies `"js"`, `"css"`, `"url"` and `"html_attr"` are also available.
+
+The words themselves are not escaped, so you can write HTML tags in them. The result of `_ENV.get()` is treated in the same way: it is already escaped by the inner `get()`, and is not escaped again. The default value of `_ENV.get()` is also a part of the template, and is not escaped either. Only when neither a word nor a default value is found, the returned key (or the return value of `onMissing`) is escaped as a normal value, because the key may come from bind data (`_ENV.get(name)`).
+
+```csv
+"","en"
+"greeting","Hello, <b>{{ name }}</b>"
+"welcome","{{ _ENV.get('greeting') }} Welcome!"
+```
+
+```js
+const lb = new LangBank('/path/to/list.csv', {"autoescape": "html"});
+lb.get('welcome', {"name": "<Tom>"}); // <- "Hello, <b>&lt;Tom&gt;</b> Welcome!"
+```
+
+With autoescape, output the result of `_ENV.get()` as it is. If you apply filters to it or concatenate it with `~`, the result may be escaped again, or (in NodeJS) the filter may not work.
 
 ### Security
 
@@ -242,34 +281,47 @@ lb.get('key', userInput);                           // NG
 lb.get('key', {"input": userInput}, '{{ input }}');  // OK
 ```
 
+The same applies to `_ENV.get()` in the words: do not pass bind data as its default value. It would be evaluated as a template, and would not be escaped even with autoescape.
+
+```csv
+"","en"
+"ng","{{ _ENV.get('key', input) }}"
+"ok","{{ _ENV.get('key', '{{ input }}') }}"
+```
+
 
 ## Options
 
 | Option | Default | Description |
 |---|---|---|
-| `bind` | `{}` | Data bound to all Twig templates. |
-| `autoescape` | `false` | Escaping strategy of Twig (`false`, `"html"`, ...). |
+| `bind` | `{}` | Data bound to all Twig templates (an object; in PHP, an array or an object). |
+| `autoescape` | `false` | Escaping strategy of Twig: `false`, `true` (same as `"html"`), `"html"`, `"js"`, `"css"`, `"url"` or `"html_attr"`. |
 | `twig` | `true` | `false` to return words without evaluating Twig. |
 | `onMissing` | (none) | `function(key, lang)` that returns the string for a missing key. If it returns a non-string, the key is used. |
-| `fallback` | `{}` | Fallback languages for each language: `{"lang": ["fallback", ...]}`. |
+| `fallback` | `{}` | Fallback languages for each language: `{"lang": ["fallback", ...]}`. A single language can be written as a string. |
 
 In PHP, pass the options as an associative array, and `onMissing` as a callable.
+
+The options are checked in the constructor: an unknown option name (e.g. a typo like `onmissing`) or a value of a wrong type throws `INVALID_OPTION`. An option whose value is `null` or `undefined` is treated as not given. In PHP, passing options that are not an array (to the constructor or to `has()`) throws a `TypeError`.
+
+In NodeJS, the options are copied in the constructor. Changing the object after that does not affect the LangBank object.
 
 
 ## API
 
 | Method | Description |
 |---|---|
-| `new LangBank(source[, options][, callback])` | Loads the dictionary. Throws on errors. The callback (NodeJS only) is called asynchronously after the initialization. In PHP: `new LangBank($source[, $options])` |
+| `new LangBank(source[, options])` | Loads the dictionary. Throws on errors. (NodeJS: the deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
 | `setLang(lang)` | Sets the current language. Returns `false` if the dictionary has no such language (see [Fallback of languages](#fallback-of-languages)). |
 | `getLang()` | Returns the current language. |
 | `getDefaultLang()` | Returns the default language. |
 | `getLangList()` | Returns the languages in the dictionary. |
 | `get(key[, bindData][, defaultValue])` | Returns the word in the current language. |
-| `has(key)` | Returns `true` if a word for the key is found in the current language (including fallback). |
+| `has(key[, options])` | Returns `true` if a word for the key is found in the current language (including fallback, unless `{"fallback": false}`). |
+| `withLang(lang)` | Returns a read-only view in the given language (see [withLang()](#withlang)). |
 | `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. |
 | `load(source)` | Loads and merges another dictionary. Returns the LangBank object. |
-| `ready()` | (NodeJS only) Returns a Promise resolved with the LangBank object. |
+| `ready()` | (NodeJS only, deprecated) Returns a Promise resolved with the LangBank object. |
 
 The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Other properties are internal.
 
@@ -287,18 +339,21 @@ Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankExcepti
 | `CSV_PARSE_ERROR` | Failed to parse the CSV text (NodeJS only). |
 | `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` / `$e->getPrevious()`. |
 | `CIRCULAR_REFERENCE` | A word refers to itself through `_ENV.get()`. |
+| `INVALID_OPTION` | An unknown option, or an invalid value of an option (also of `has()`). |
 
-An error in `_ENV.get()` is thrown as is from the outer `get()`. For example, a Twig error in the inner word is a `TEMPLATE_ERROR` of the inner key.
-
-Even when a callback is given, errors are thrown from the constructor synchronously:
+The codes are also available as constants: `LangBank.LangBankError.FILE_NOT_FOUND` (NodeJS) / `tomk79\LangBankException::FILE_NOT_FOUND` (PHP).
 
 ```js
 try{
-	const lb = new LangBank('/path/to/list.csv', function(){ /* ... */ });
+	lb.load(path);
 }catch(e){
-	console.error(e.code, e.message);
+	if( e.code === LangBank.LangBankError.FILE_NOT_FOUND ){ /* ... */ }
 }
 ```
+
+An error in `_ENV.get()` is thrown as is from the outer `get()`. For example, a Twig error in the inner word is a `TEMPLATE_ERROR` of the inner key.
+
+Even when a (deprecated) callback is given, errors are thrown from the constructor synchronously.
 
 
 ## Migration from v0.3
@@ -322,8 +377,11 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 | `_ENV.get()` inherits the bind data of the outer `get()`. | Pass the data to `_ENV.get()` explicitly to override it. |
 | Language columns that differ only in case or `_`/`-` (e.g. `ja` and `JA`) are merged into one column. | — |
 | NodeJS: files other than `libs/LangBank.js` cannot be required directly (`exports` in package.json). | Require `langbank`. |
+| An unknown option or an invalid value of an option throws `INVALID_OPTION`. PHP: options that are not an array throw a `TypeError`. | Fix the options. |
+| PHP: the methods have type declarations. A subclass that overrides them must have compatible signatures. | Update the signatures of the subclass. |
+| PHP: with `autoescape`, the result of `_ENV.get()` is not escaped again. | — |
 
-The callback style constructor still works, and is still called asynchronously.
+The callback style constructor still works, and is still called asynchronously. It is deprecated, as well as `ready()`.
 
 
 ## Change Log
@@ -345,6 +403,16 @@ The callback style constructor still works, and is still called asynchronously.
 - 大文字・小文字や `_`/`-` だけが違う言語名の列を、1 つの列にまとめるようになった。
 - `onMissing` が文字列以外を返した場合は、キーを返すようにした。
 - npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
+- `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。
+- `has()` に `{"fallback": false}` オプションを追加。
+- オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を投げるようになった。 `autoescape` に指定できる値を `false`, `true`, `"html"`, `"js"`, `"css"`, `"url"`, `"html_attr"` に限定した。
+- エラーコードの定数を追加 (`LangBank.LangBankError.FILE_NOT_FOUND`, `tomk79\LangBankException::FILE_NOT_FOUND` など)。
+- `get()` の第 2 引数が文字列で、第 3 引数が `null` (または `undefined`) の場合も、第 2 引数をデフォルト値として扱うようになった。 (ラッパー関数から引数をそのまま渡せる)
+- 読み込み元のリストの中の `null`, `''`, `[]` を読み飛ばすようになった。
+- `autoescape` が有効な場合に、 `_ENV.get()` の結果が二重にエスケープされる不具合を修正。
+- コンストラクタのコールバックと `ready()` を非推奨にした。
+- NodeJS版: オプションをコンストラクタでコピーするようになった。
+- PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
 - NodeJS版: `getList()` が辞書のコピーを返すようになった。

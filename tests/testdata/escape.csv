@@ -4,3 +4,6 @@
 "ref","{{ _ENV.get('amp') }}"
 "bad","{{ broken"
 "raw","{% verbatim %}{{ literal }}{% endverbatim %}"
+"nested","[{{ _ENV.get('greet') }}]"
+"upper","{{ _ENV.get('amp')|upper }}"
+"dynamic","[{{ _ENV.get(name) }}]"

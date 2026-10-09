@@ -13,7 +13,29 @@ try{
 }catch(e){
 	// Twig を読み込めない環境では、テンプレートを評価せずに返す
 }
+var TwigMarkup = null;
+if( Twig && typeof(Twig.extend) === 'function' ){
+	// テンプレートで安全な文字列として扱われる Twig.Markup は、extend() からしか取り出せない
+	Twig.extend(function(TwigCore){
+		TwigMarkup = TwigCore.Markup;
+	});
+}
 var csvParse = require('csv/sync').parse;
+
+/** エラーコード */
+var ERROR_CODES = [
+	'FILE_NOT_FOUND',
+	'FILE_READ_ERROR',
+	'INVALID_SOURCE',
+	'INVALID_CSV',
+	'CSV_PARSE_ERROR',
+	'TEMPLATE_ERROR',
+	'CIRCULAR_REFERENCE',
+	'INVALID_OPTION'
+];
+
+/** options.autoescape に指定できるエスケープの戦略 */
+var AUTOESCAPE_STRATEGIES = ['html', 'js', 'css', 'url', 'html_attr'];
 
 /**
  * LangBank のエラー
@@ -33,6 +55,9 @@ function LangBankError(code, message, cause){
 }
 LangBankError.prototype = Object.create(Error.prototype);
 LangBankError.prototype.constructor = LangBankError;
+ERROR_CODES.forEach(function(code){
+	LangBankError[code] = code;
+});
 
 /**
  * セルの値を文字列にする
@@ -49,6 +74,20 @@ function toStr(value){
  */
 function normalizeLang(lang){
 	return toStr(lang).toLowerCase().replace(/_/g, '-');
+}
+
+/**
+ * 配列ではないオブジェクトか
+ */
+function isPlainObject(value){
+	return value !== null && typeof(value) === 'object' && !Array.isArray(value);
+}
+
+/**
+ * 空の読み込み元か (読み込み元のリストの中では読み飛ばす)
+ */
+function isEmptySource(value){
+	return value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
 }
 
 /**
@@ -118,7 +157,7 @@ function toCsvArrays(src){
 	}
 	if( Array.isArray(src) ){
 		var isSourceList = src.length > 0 && src.every(function(item){
-			return typeof(item) === 'string' || is2dArray(item);
+			return isEmptySource(item) || typeof(item) === 'string' || is2dArray(item);
 		});
 		if( !isSourceList ){
 			// パース済みのCSV配列
@@ -131,6 +170,124 @@ function toCsvArrays(src){
 		return rtn;
 	}
 	throw new LangBankError('INVALID_SOURCE', 'Unsupported source type: '+(typeof src));
+}
+
+/**
+ * オプションの検証と正規化
+ */
+var OPTION_NORMALIZERS = {
+	'bind': function(value){
+		if( !isPlainObject(value) ){
+			throw new LangBankError('INVALID_OPTION', 'Option "bind" must be an object.');
+		}
+		var rtn = {};
+		for( var key in value ){
+			rtn[key] = value[key];
+		}
+		return rtn;
+	},
+	'autoescape': function(value){
+		if( value === false ){
+			return false;
+		}
+		if( value === true ){
+			return 'html';
+		}
+		if( AUTOESCAPE_STRATEGIES.indexOf(value) < 0 ){
+			throw new LangBankError('INVALID_OPTION', 'Option "autoescape" must be false, true, or one of: '+AUTOESCAPE_STRATEGIES.join(', ')+'.');
+		}
+		return value;
+	},
+	'twig': function(value){
+		if( typeof(value) !== 'boolean' ){
+			throw new LangBankError('INVALID_OPTION', 'Option "twig" must be a boolean.');
+		}
+		return value;
+	},
+	'onMissing': function(value){
+		if( typeof(value) !== 'function' ){
+			throw new LangBankError('INVALID_OPTION', 'Option "onMissing" must be a function.');
+		}
+		return value;
+	},
+	'fallback': function(value){
+		if( !isPlainObject(value) ){
+			throw new LangBankError('INVALID_OPTION', 'Option "fallback" must be an object.');
+		}
+		var rtn = {};
+		Object.keys(value).forEach(function(lang){
+			var langs = (typeof(value[lang]) === 'string') ? [value[lang]] : value[lang];
+			if( !Array.isArray(langs) || !langs.every(function(l){ return typeof(l) === 'string'; }) ){
+				throw new LangBankError('INVALID_OPTION', 'Option "fallback" must map a language to a string or an array of strings: '+lang);
+			}
+			rtn[lang] = langs.slice();
+		});
+		return rtn;
+	}
+};
+
+/**
+ * オプションを検証し、正規化したコピーを返す
+ */
+function normalizeOptions(options){
+	if( options === null || options === undefined ){
+		return {};
+	}
+	if( !isPlainObject(options) ){
+		throw new LangBankError('INVALID_OPTION', 'Options must be an object.');
+	}
+	var rtn = {};
+	Object.keys(options).forEach(function(name){
+		if( !Object.prototype.hasOwnProperty.call(OPTION_NORMALIZERS, name) ){
+			throw new LangBankError('INVALID_OPTION', 'Unknown option: '+name);
+		}
+		if( options[name] === null || options[name] === undefined ){
+			return;
+		}
+		rtn[name] = OPTION_NORMALIZERS[name](options[name]);
+	});
+	return rtn;
+}
+
+/**
+ * has() のオプションを検証する
+ */
+function normalizeHasOptions(options){
+	var rtn = {'fallback': true};
+	if( options === null || options === undefined ){
+		return rtn;
+	}
+	if( !isPlainObject(options) ){
+		throw new LangBankError('INVALID_OPTION', 'Options of has() must be an object.');
+	}
+	Object.keys(options).forEach(function(name){
+		if( name !== 'fallback' ){
+			throw new LangBankError('INVALID_OPTION', 'Unknown option of has(): '+name);
+		}
+		if( options[name] === null || options[name] === undefined ){
+			return;
+		}
+		if( typeof(options[name]) !== 'boolean' ){
+			throw new LangBankError('INVALID_OPTION', 'Option "fallback" of has() must be a boolean.');
+		}
+		rtn.fallback = options[name];
+	});
+	return rtn;
+}
+
+/**
+ * get() の引数を解釈する
+ *
+ * 第 2 引数が文字列で、第 3 引数が null か undefined なら、第 2 引数をデフォルト値とする。
+ * (引数の数ではなく型で判定するので、ラッパー関数から引数をそのまま渡せる)
+ */
+function parseGetArgs(args){
+	var bindData = args[1];
+	var defaultValue = args[2];
+	if( typeof(bindData) === 'string' && (defaultValue === null || defaultValue === undefined) ){
+		return {'bindData': null, 'defaultValue': bindData};
+	}
+	return {'bindData': bindData, 'defaultValue': defaultValue};
 }
 
 /**
@@ -152,9 +309,9 @@ var LangBank = function(src, options, callback){
 	var _this = this;
 	if( typeof(options) === 'function' ){
 		callback = options;
-		options = {};
+		options = null;
 	}
-	this.options = (options && typeof(options) === 'object') ? options : {};
+	this.options = normalizeOptions(options);
 	this.pathCsv = src;
 
 	this.langDb = Object.create(null);
@@ -163,7 +320,7 @@ var LangBank = function(src, options, callback){
 
 	var langList = [];
 	var langMap = Object.create(null); // 正規化した言語コード => 列名
-	var renderStack = []; // 描画中の get() の {key, bind, error}
+	var renderStack = []; // 描画中の get() の {key, lang, bind, error}
 
 	/**
 	 * パース済みのCSV配列を辞書にマージする
@@ -239,8 +396,10 @@ var LangBank = function(src, options, callback){
 
 	/**
 	 * 言語の候補を、辞書の列名のリストにする
+	 *
+	 * useFallback が false なら、その言語の列だけを探す。
 	 */
-	function resolveLangs(lang, includeDefault){
+	function resolveLangs(lang, useFallback, includeDefault){
 		var candidates = [];
 		function add(l){
 			var normalized = normalizeLang(l);
@@ -251,15 +410,16 @@ var LangBank = function(src, options, callback){
 
 		if( toStr(lang) !== '' ){
 			add(lang);
+		}
 
+		if( useFallback && toStr(lang) !== '' ){
 			var fallback = _this.options.fallback;
-			if( fallback && typeof(fallback) === 'object' ){
+			if( fallback ){
 				Object.keys(fallback).forEach(function(fallbackKey){
 					if( normalizeLang(fallbackKey) !== normalizeLang(lang) ){
 						return;
 					}
-					var langs = fallback[fallbackKey];
-					(Array.isArray(langs) ? langs : [langs]).forEach(add);
+					fallback[fallbackKey].forEach(add);
 				});
 			}
 
@@ -284,14 +444,14 @@ var LangBank = function(src, options, callback){
 	}
 
 	/**
-	 * 現在の言語で訳文を探す (見つからなければ null)
+	 * 指定した言語で訳文を探す (見つからなければ null)
 	 */
-	function findValue(key){
+	function findValue(key, lang, useFallback){
 		var entry = _this.langDb[key];
 		if( !entry ){
 			return null;
 		}
-		var langs = resolveLangs(_this.lang, true);
+		var langs = resolveLangs(lang, useFallback, useFallback);
 		for( var i = 0; i < langs.length; i ++ ){
 			var value = entry[langs[i]];
 			if( typeof(value) === 'string' && value !== '' ){
@@ -304,7 +464,7 @@ var LangBank = function(src, options, callback){
 	/**
 	 * Twig テンプレートを評価する
 	 */
-	function render(template, bindData, key){
+	function render(template, bindData, key, lang){
 		if( _this.options.twig === false || !Twig || !/\{[{%#]/.test(template) ){
 			return template;
 		}
@@ -324,9 +484,9 @@ var LangBank = function(src, options, callback){
 		for( var dataKey in bind ){
 			data[dataKey] = bind[dataKey];
 		}
-		data._ENV = templateEnv;
+		data._ENV = createView(lang, true);
 
-		var frame = {'key': key, 'bind': bind, 'error': null};
+		var frame = {'key': key, 'lang': lang, 'bind': bind, 'error': null};
 		renderStack.push(frame);
 		try{
 			return Twig.twig({
@@ -340,30 +500,93 @@ var LangBank = function(src, options, callback){
 				throw frame.error;
 			}
 			var message = (e && (e.message || e.type)) || String(e);
-			throw new LangBankError('TEMPLATE_ERROR', 'Failed to render template of key "'+key+'" (lang: '+_this.lang+'): '+message, e);
+			throw new LangBankError('TEMPLATE_ERROR', 'Failed to render template of key "'+key+'" (lang: '+lang+'): '+message, e);
 		}finally{
 			renderStack.pop();
 		}
 	}
 
 	/**
-	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
+	 * 指定した言語で get() する
+	 *
+	 * 戻り値は {text, trusted}。trusted は、訳文かデフォルト値から作った文字列なら true。
+	 * (キーそのものや onMissing の戻り値は、テンプレートの中で安全な文字列として扱わない)
 	 */
-	var templateEnv = Object.freeze(Object.create(null, {
-		'lang': {'enumerable': true, 'get': function(){ return _this.lang; }},
-		'defaultLang': {'enumerable': true, 'get': function(){ return _this.defaultLang; }},
-		'get': {'enumerable': true, 'value': function(){ return _this.get.apply(_this, arguments); }},
-		'has': {'enumerable': true, 'value': function(key){ return _this.has(key); }},
-		'getLang': {'enumerable': true, 'value': function(){ return _this.getLang(); }},
-		'getDefaultLang': {'enumerable': true, 'value': function(){ return _this.getDefaultLang(); }}
-	}));
+	function getFor(lang, args){
+		var parsed = parseGetArgs(args);
+		try{
+			return getWord(toStr(args[0]), parsed.bindData, parsed.defaultValue, lang);
+		}catch(e){
+			if( e instanceof LangBankError && renderStack.length && !renderStack[renderStack.length - 1].error ){
+				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
+				renderStack[renderStack.length - 1].error = e;
+			}
+			throw e;
+		}
+	}
+
+	/**
+	 * get() の本体
+	 */
+	function getWord(key, bindData, defaultValue, lang){
+		var path = renderStack.map(function(frame){ return frame.key; });
+		if( path.indexOf(key) >= 0 ){
+			throw new LangBankError('CIRCULAR_REFERENCE', 'Circular reference: '+path.slice(path.indexOf(key)).concat([key]).join(' -> '));
+		}
+
+		var value = findValue(key, lang, true);
+		if( value !== null ){
+			return {'text': render(value, bindData, key, lang), 'trusted': true};
+		}
+		if( typeof(defaultValue) === 'string' ){
+			return {'text': render(defaultValue, bindData, key, lang), 'trusted': true};
+		}
+		if( _this.options.onMissing ){
+			var missing = _this.options.onMissing(key, lang);
+			if( typeof(missing) === 'string' ){
+				return {'text': missing, 'trusted': false};
+			}
+		}
+		return {'text': key, 'trusted': false};
+	}
+
+	/**
+	 * 指定した言語で has() する
+	 */
+	function hasFor(lang, key, options){
+		return findValue(toStr(key), lang, normalizeHasOptions(options).fallback) !== null;
+	}
+
+	/**
+	 * 言語を固定した、読み取り専用のビュー
+	 *
+	 * forTemplate が true なら、テンプレートに _ENV として渡す。
+	 * このとき autoescape が有効なら、訳文やデフォルト値から作った get() の結果を安全な文字列 (Twig.Markup) で返し、
+	 * 二重にエスケープされないようにする。キーそのものや onMissing の戻り値は、外側のテンプレートでエスケープさせる。
+	 */
+	function createView(lang, forTemplate){
+		return Object.freeze(Object.create(forTemplate ? null : Object.prototype, {
+			'lang': {'enumerable': true, 'value': lang},
+			'defaultLang': {'enumerable': true, 'get': function(){ return _this.defaultLang; }},
+			'get': {'enumerable': true, 'value': function(){
+				var result = getFor(lang, arguments);
+				if( forTemplate && result.trusted && TwigMarkup && _this.options.autoescape ){
+					return TwigMarkup(result.text);
+				}
+				return result.text;
+			}},
+			'has': {'enumerable': true, 'value': function(key, options){ return hasFor(lang, key, options); }},
+			'getLang': {'enumerable': true, 'value': function(){ return lang; }},
+			'getDefaultLang': {'enumerable': true, 'value': function(){ return _this.defaultLang; }}
+		}));
+	}
 
 	/**
 	 * set Language
 	 */
 	this.setLang = function(lang){
 		_this.lang = lang;
-		return resolveLangs(lang, false).length > 0;
+		return resolveLangs(lang, true, false).length > 0;
 	}
 
 	/**
@@ -390,63 +613,22 @@ var LangBank = function(src, options, callback){
 	/**
 	 * get word by key
 	 */
-	this.get = function(key){
-		var bindData = null;
-		var defaultValue = null;
-
-		if( arguments.length == 2 ){
-			if( typeof(arguments[1]) === 'string' ){
-				defaultValue = arguments[1];
-			}else{
-				bindData = arguments[1];
-			}
-		}else if( arguments.length >= 3 ){
-			bindData = arguments[1];
-			defaultValue = arguments[2];
-		}
-
-		key = toStr(key);
-		try{
-			return getWord(key, bindData, defaultValue);
-		}catch(e){
-			if( e instanceof LangBankError && renderStack.length && !renderStack[renderStack.length - 1].error ){
-				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
-				renderStack[renderStack.length - 1].error = e;
-			}
-			throw e;
-		}
-	}
-
-	/**
-	 * get() の本体
-	 */
-	function getWord(key, bindData, defaultValue){
-		var path = renderStack.map(function(frame){ return frame.key; });
-		if( path.indexOf(key) >= 0 ){
-			throw new LangBankError('CIRCULAR_REFERENCE', 'Circular reference: '+path.slice(path.indexOf(key)).concat([key]).join(' -> '));
-		}
-
-		var value = findValue(key);
-		if( value !== null ){
-			return render(value, bindData, key);
-		}
-		if( typeof(defaultValue) === 'string' ){
-			return render(defaultValue, bindData, key);
-		}
-		if( typeof(_this.options.onMissing) === 'function' ){
-			var missing = _this.options.onMissing(key, _this.lang);
-			if( typeof(missing) === 'string' ){
-				return missing;
-			}
-		}
-		return key;
+	this.get = function(){
+		return getFor(_this.lang, arguments).text;
 	}
 
 	/**
 	 * has word
 	 */
-	this.has = function(key){
-		return findValue(toStr(key)) !== null;
+	this.has = function(key, options){
+		return hasFor(_this.lang, key, options);
+	}
+
+	/**
+	 * 言語を固定したビューを返す
+	 */
+	this.withLang = function(lang){
+		return createView((lang === null || lang === undefined) ? null : toStr(lang), false);
 	}
 
 	/**
@@ -473,7 +655,7 @@ var LangBank = function(src, options, callback){
 	}
 
 	/**
-	 * Promise
+	 * Promise (互換のために残している。初期化は同期で終わる)
 	 */
 	this.ready = function(){
 		return Promise.resolve(_this);
