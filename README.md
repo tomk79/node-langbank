@@ -1,4 +1,4 @@
-# node-langbank
+# langbank
 
 A simple multilingual dictionary library for Node.js and PHP.
 Write your words in a CSV file, and get them in the current language. Words can be [Twig](https://twig.symfony.com/) templates.
