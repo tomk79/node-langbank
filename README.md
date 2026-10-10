@@ -431,7 +431,7 @@ The callback style constructor still works, and is still called asynchronously. 
 
 ## Change Log
 
-### langbank v1.0.0 (リリース日未定)
+### langbank v1.0.0 (2026-10-10)
 
 - 破壊的な変更を含みます。 "Migration from v0.3" を参照してください。
 - 未定義のキーに対して、 `---` ではなくキーそのものを返すようになった。 `onMissing` オプションで変更できる。
