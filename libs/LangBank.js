@@ -253,7 +253,7 @@ function normalizeOptions(options){
  * has() のオプションを検証する
  */
 function normalizeHasOptions(options){
-	var rtn = {'fallback': true};
+	var rtn = {'exact': false};
 	if( options === null || options === undefined ){
 		return rtn;
 	}
@@ -261,16 +261,16 @@ function normalizeHasOptions(options){
 		throw new LangBankError('INVALID_OPTION', 'Options of has() must be an object.');
 	}
 	Object.keys(options).forEach(function(name){
-		if( name !== 'fallback' ){
+		if( name !== 'exact' ){
 			throw new LangBankError('INVALID_OPTION', 'Unknown option of has(): '+name);
 		}
 		if( options[name] === null || options[name] === undefined ){
 			return;
 		}
 		if( typeof(options[name]) !== 'boolean' ){
-			throw new LangBankError('INVALID_OPTION', 'Option "fallback" of has() must be a boolean.');
+			throw new LangBankError('INVALID_OPTION', 'Option "exact" of has() must be a boolean.');
 		}
-		rtn.fallback = options[name];
+		rtn.exact = options[name];
 	});
 	return rtn;
 }
@@ -321,11 +321,17 @@ var LangBank = function(src, options, callback){
 	var langList = [];
 	var langMap = Object.create(null); // 正規化した言語コード => 列名
 	var renderStack = []; // 描画中の get() の {key, lang, bind, error}
+	var langIsSet = false; // setLang() が呼ばれたか
 
 	/**
-	 * パース済みのCSV配列を辞書にマージする
+	 * パース済みのCSV配列を検証する
+	 *
+	 * 辞書は変更しない。空のCSVなら null、そうでなければ {rows, header} を返す。
+	 * rows は、セルを一度だけ読んで文字列にしたコピー (マージの途中で入力を読み直さない)。
+	 * header は、列のインデックス => 言語名 (言語の列だけ)。
 	 */
-	function mergeCsv(csvAry){
+	function prepareCsv(csvAry){
+		var rows = [];
 		csvAry.forEach(function(row){
 			if( row === null || row === undefined ){
 				return;
@@ -333,27 +339,44 @@ var LangBank = function(src, options, callback){
 			if( !Array.isArray(row) ){
 				throw new LangBankError('INVALID_SOURCE', 'Each row of CSV array must be an array.');
 			}
-			row.forEach(function(cell){
+			var cells = [];
+			for( var i = 0; i < row.length; i ++ ){
+				var cell = row[i];
 				if( cell !== null && cell !== undefined && typeof(cell) === 'object' || typeof(cell) === 'function' ){
 					throw new LangBankError('INVALID_SOURCE', 'Each cell of CSV array must be a scalar value.');
 				}
-			});
-		});
-		var rows = csvAry.filter(function(row){
-			return Array.isArray(row) && row.some(function(cell){ return toStr(cell) !== ''; });
+				cells.push(toStr(cell));
+			}
+			if( cells.some(function(cell){ return cell !== ''; }) ){
+				rows.push(cells);
+			}
 		});
 		if( !rows.length ){
-			return;
+			return null;
 		}
+
+		var header = [];
+		rows[0].forEach(function(lang, idx){
+			if( idx > 0 && lang !== '' ){
+				header[idx] = lang;
+			}
+		});
+		if( !header.some(function(lang){ return lang !== undefined; }) ){
+			throw new LangBankError('INVALID_CSV', 'CSV header has no language columns.');
+		}
+		return {'rows': rows, 'header': header};
+	}
+
+	/**
+	 * prepareCsv() で検証したCSVを辞書にマージする
+	 */
+	function mergeCsv(prepared){
+		var rows = prepared.rows;
 
 		// 大小文字や _/- だけが違う言語名は、最初に現れた表記の列にまとめる
 		var langIdx = [];
 		var firstLang = null;
-		rows[0].forEach(function(cell, idx){
-			var lang = toStr(cell);
-			if( idx == 0 || lang === '' ){
-				return;
-			}
+		prepared.header.forEach(function(lang, idx){
 			var normalized = normalizeLang(lang);
 			if( !(normalized in langMap) ){
 				langMap[normalized] = lang;
@@ -364,19 +387,18 @@ var LangBank = function(src, options, callback){
 				firstLang = langIdx[idx];
 			}
 		});
-		if( firstLang === null ){
-			throw new LangBankError('INVALID_CSV', 'CSV header has no language columns.');
-		}
 
 		if( _this.defaultLang === null ){
+			// 最初に読み込んだCSVの最初の列を、デフォルト言語にする
+			// setLang() が呼ばれていなければ、初期言語にもする
 			_this.defaultLang = firstLang;
-		}
-		if( _this.lang === null ){
-			_this.lang = firstLang;
+			if( !langIsSet ){
+				_this.lang = firstLang;
+			}
 		}
 
 		rows.slice(1).forEach(function(row){
-			var key = toStr(row[0]);
+			var key = row[0];
 			if( key === '' ){
 				return;
 			}
@@ -385,7 +407,7 @@ var LangBank = function(src, options, callback){
 			}
 			var entry = _this.langDb[key];
 			langIdx.forEach(function(lang, idx){
-				var value = toStr(row[idx]);
+				var value = (idx < row.length) ? row[idx] : '';
 				if( value !== '' || !(lang in entry) ){
 					// 空でないセルだけで後勝ちする
 					entry[lang] = value;
@@ -441,6 +463,14 @@ var LangBank = function(src, options, callback){
 			rtn.push(_this.defaultLang);
 		}
 		return rtn;
+	}
+
+	/**
+	 * 言語を辞書の列名に解決する (デフォルト言語へのフォールバックは含めない。見つからなければ null)
+	 */
+	function resolveLangFor(lang){
+		var langs = resolveLangs(lang, true, false);
+		return langs.length ? langs[0] : null;
 	}
 
 	/**
@@ -554,7 +584,7 @@ var LangBank = function(src, options, callback){
 	 * 指定した言語で has() する
 	 */
 	function hasFor(lang, key, options){
-		return findValue(toStr(key), lang, normalizeHasOptions(options).fallback) !== null;
+		return findValue(toStr(key), lang, !normalizeHasOptions(options).exact) !== null;
 	}
 
 	/**
@@ -576,8 +606,10 @@ var LangBank = function(src, options, callback){
 				return result.text;
 			}},
 			'has': {'enumerable': true, 'value': function(key, options){ return hasFor(lang, key, options); }},
+			'resolveLang': {'enumerable': true, 'value': function(l){ return resolveLangFor(l === undefined ? lang : l); }},
 			'getLang': {'enumerable': true, 'value': function(){ return lang; }},
-			'getDefaultLang': {'enumerable': true, 'value': function(){ return _this.defaultLang; }}
+			'getDefaultLang': {'enumerable': true, 'value': function(){ return _this.defaultLang; }},
+			'getLangList': {'enumerable': true, 'value': function(){ return langList.slice(); }}
 		}));
 	}
 
@@ -585,8 +617,9 @@ var LangBank = function(src, options, callback){
 	 * set Language
 	 */
 	this.setLang = function(lang){
-		_this.lang = lang;
-		return resolveLangs(lang, true, false).length > 0;
+		_this.lang = (lang === null || lang === undefined) ? null : toStr(lang);
+		langIsSet = true;
+		return resolveLangFor(_this.lang) !== null;
 	}
 
 	/**
@@ -601,6 +634,13 @@ var LangBank = function(src, options, callback){
 	 */
 	this.getDefaultLang = function(){
 		return _this.defaultLang;
+	}
+
+	/**
+	 * 言語を辞書の列名に解決する (省略すると現在の言語)
+	 */
+	this.resolveLang = function(lang){
+		return resolveLangFor(lang === undefined ? _this.lang : lang);
 	}
 
 	/**
@@ -650,15 +690,13 @@ var LangBank = function(src, options, callback){
 	 * load additional words
 	 */
 	this.load = function(src){
-		toCsvArrays(src).forEach(mergeCsv);
+		// すべて検証してからマージする (エラーなら辞書を変えない)
+		toCsvArrays(src).map(prepareCsv).forEach(function(prepared){
+			if( prepared ){
+				mergeCsv(prepared);
+			}
+		});
 		return _this;
-	}
-
-	/**
-	 * Promise (互換のために残している。初期化は同期で終わる)
-	 */
-	this.ready = function(){
-		return Promise.resolve(_this);
 	}
 
 	this.load(src);

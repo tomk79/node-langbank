@@ -429,22 +429,22 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
-	 * has() の fallback オプション
+	 * has() の exact オプション
 	 */
-	public function testHasWithoutFallback(){
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv');
+	public function testHasExact(){
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv', array('fallback' => array('en-GB' => 'en-US')));
 		$lb->setLang('en-GB');
 		$this->assertTrue($lb->has('color'));
-		$this->assertFalse($lb->has('color', array('fallback' => false)));
+		$this->assertFalse($lb->has('color', array('exact' => true)));
 		$lb->setLang('ja_JP');
-		$this->assertFalse($lb->has('hello', array('fallback' => false)));
+		$this->assertFalse($lb->has('hello', array('exact' => true)));
 		$lb->setLang('JA');
-		$this->assertTrue($lb->has('hello', array('fallback' => false)));
+		$this->assertTrue($lb->has('hello', array('exact' => true)));
 		$lb->setLang('en-US');
-		$this->assertFalse($lb->has('hello', array('fallback' => false)));
-		$this->assertTrue($lb->has('hello', array('fallback' => null)));
-		$this->assertTrue($lb->has('hello', array('fallback' => true)));
-		foreach( array(array('x' => 1), array('fallback' => 'no')) as $options ){
+		$this->assertFalse($lb->has('hello', array('exact' => true)));
+		$this->assertTrue($lb->has('hello', array('exact' => null)));
+		$this->assertTrue($lb->has('hello', array('exact' => false)));
+		foreach( array(array('x' => 1), array('fallback' => false), array('exact' => 'yes')) as $options ){
 			$this->assertLangBankError(function() use ($lb, $options){
 				$lb->has('hello', $options);
 			}, 'INVALID_OPTION');
@@ -494,7 +494,7 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('ja', $ja->getLang());
 		$this->assertSame('en', $ja->getDefaultLang());
 		$this->assertTrue($ja->has('color'));
-		$this->assertTrue($ja->has('color', array('fallback' => false)));
+		$this->assertTrue($ja->has('color', array('exact' => true)));
 		$this->assertSame('DEF', $ja->get('undefinedKey', 'DEF'));
 		$this->assertFalse(method_exists($ja, 'setLang'));
 		$this->assertFalse(method_exists($ja, 'load'));
@@ -525,6 +525,160 @@ class mainTest extends PHPUnit\Framework\TestCase{
 			$lb->withLang('ja')->get('loop_a');
 		}, 'CIRCULAR_REFERENCE');
 		$this->assertSame('Hello,  Welcome!', $lb->withLang('ja')->get('welcome'));
+	}
+
+	/**
+	 * 読み込み元は省略できる
+	 */
+	public function testSourceCanBeOmitted(){
+		$lb = new tomk79\LangBank();
+		$this->assertSame(array(), $lb->getLangList());
+		$lb->load($this->listCsv);
+		$this->assertSame('en', $lb->getLang());
+		$this->assertSame('Hello', $lb->get('hello'));
+	}
+
+	/**
+	 * resolveLang()
+	 */
+	public function testResolveLang(){
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv', array('fallback' => array('zh-HK' => array('zh-TW', 'zh-Hant'))));
+		$this->assertSame('ja', $lb->resolveLang('ja'));
+		$this->assertSame('ja', $lb->resolveLang('JA_jp'));
+		$this->assertSame('en-US', $lb->resolveLang('EN-us'));
+		$this->assertSame('en', $lb->resolveLang('en-GB'));
+		$this->assertSame('zh-Hant', $lb->resolveLang('zh-HK'));
+		$this->assertSame('zh-Hant', $lb->resolveLang('zh-Hant-TW'));
+		$this->assertNull($lb->resolveLang('xx'));
+		$this->assertNull($lb->resolveLang(''));
+		$this->assertNull($lb->resolveLang(null));
+
+		// セルの内容は調べない (en-US の hello は空)
+		$lb->setLang('en-US');
+		$this->assertSame('en-US', $lb->resolveLang());
+		$this->assertSame('Hello', $lb->get('hello'));
+
+		// 省略すると現在の言語。setLang() の戻り値と対応する
+		$lb->setLang('xx');
+		$this->assertNull($lb->resolveLang());
+		$lb->setLang(null);
+		$this->assertNull($lb->resolveLang());
+		$this->assertSame('pt', $lb->resolveLang('pt-BR'));
+
+		$this->assertNull((new tomk79\LangBank())->resolveLang('en'));
+	}
+
+	/**
+	 * resolveLang() はフォールバック先の言語からさらにフォールバックしない
+	 */
+	public function testResolveLangDoesNotFollowFallbackOfFallback(){
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv', array('fallback' => array('zh-HK' => 'zh-Hant-TW', 'zh-MO' => 'zh-TW', 'zh-TW' => 'zh-Hant')));
+		$this->assertNull($lb->resolveLang('zh-HK'));
+		$this->assertNull($lb->resolveLang('zh-MO'));
+		$this->assertSame('zh-Hant', $lb->resolveLang('zh-TW'));
+	}
+
+	/**
+	 * ビューと _ENV の resolveLang() と getLangList()
+	 */
+	public function testViewResolveLangAndLangList(){
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv');
+		$lb->setLang('ja');
+		$view = $lb->withLang('en-GB');
+		$this->assertSame('en', $view->resolveLang());
+		$this->assertSame('ja', $view->resolveLang('JA'));
+		$this->assertNull($view->resolveLang(null));
+		$this->assertNull($lb->withLang(null)->resolveLang());
+		$this->assertSame(array('en', 'en-US', 'ja', 'zh-Hant', 'pt'), $view->getLangList());
+
+		// 呼び出した時点の辞書を反映する
+		$lb->load('"","fr"'."\n".'"hello","Bonjour"');
+		$this->assertSame(array('en', 'en-US', 'ja', 'zh-Hant', 'pt', 'fr'), $view->getLangList());
+
+		$tpl = '{{ _ENV.resolveLang() }}/{{ _ENV.resolveLang("pt_BR") }}/{{ _ENV.resolveLang(null) is null ? "null" : "x" }}/{{ _ENV.getLangList()|join(",") }}';
+		$this->assertSame('en/pt/null/en,en-US,ja,zh-Hant,pt,fr', $view->get('nokey', null, $tpl));
+		$this->assertSame('ja/pt/null/en,en-US,ja,zh-Hant,pt,fr', $lb->get('nokey', null, $tpl));
+	}
+
+	/**
+	 * setLang() を呼んだ後の load() は現在の言語を変えない
+	 */
+	public function testLoadAfterSetLang(){
+		$lb = new tomk79\LangBank();
+		$lb->setLang(null);
+		$lb->load(__DIR__.'/testdata/regional.csv');
+		$this->assertNull($lb->getLang());
+		$this->assertSame('en', $lb->getDefaultLang());
+
+		$lb = new tomk79\LangBank();
+		$lb->setLang('ja');
+		$lb->load(__DIR__.'/testdata/regional.csv');
+		$this->assertSame('ja', $lb->getLang());
+
+		// 空の読み込み元では初期言語を決めない
+		$lb = new tomk79\LangBank(array(null, '"","ja","en"'."\n".'"k","値","v"'));
+		$this->assertSame('ja', $lb->getLang());
+		$this->assertSame('ja', $lb->getDefaultLang());
+	}
+
+	/**
+	 * load() はエラーなら辞書を変えない
+	 */
+	public function testLoadIsAtomic(){
+		$lb = new tomk79\LangBank();
+		foreach( array(
+			array(__DIR__.'/testdata/regional.csv', __DIR__.'/testdata/notExists.csv'),
+			array(__DIR__.'/testdata/regional.csv', array(array('key'), array('k', 'v'))),
+			array(__DIR__.'/testdata/regional.csv', array(array('', 'en'), 'x')),
+			array(__DIR__.'/testdata/regional.csv', array(array('', 'en'), array(array()))),
+			array(__DIR__.'/testdata/regional.csv', 1),
+		) as $src ){
+			try{
+				$lb->load($src);
+				$this->fail('LangBankException expected.');
+			}catch( \tomk79\LangBankException $e ){
+			}
+			$this->assertSame(array(), $lb->getList());
+			$this->assertSame(array(), $lb->getLangList());
+			$this->assertNull($lb->getLang());
+			$this->assertNull($lb->getDefaultLang());
+			$this->assertNull($lb->resolveLang('en'));
+		}
+
+		// 失敗した読み込みは、次の読み込みに影響しない
+		$lb->load('"","ja","en"'."\n".'"k","値","v"');
+		$this->assertSame(array('ja', 'en'), $lb->getLangList());
+		$this->assertSame('ja', $lb->getLang());
+		$this->assertSame('ja', $lb->getDefaultLang());
+		$this->assertSame(array('k' => array('ja' => '値', 'en' => 'v')), $lb->getList());
+
+		// 読み込み済みの辞書も変えない
+		$view = $lb->withLang('fr');
+		$lb->setLang('en');
+		try{
+			$lb->load(array(__DIR__.'/testdata/regional.csv', array(array('key'), array('k', 'v'))));
+			$this->fail('LangBankException expected.');
+		}catch( \tomk79\LangBankException $e ){
+		}
+		$this->assertSame(array('ja', 'en'), $lb->getLangList());
+		$this->assertSame(array('k' => array('ja' => '値', 'en' => 'v')), $lb->getList());
+		$this->assertSame('en', $lb->getLang());
+		$this->assertSame('ja', $lb->getDefaultLang());
+		$this->assertNull($lb->resolveLang('fr'));
+		$this->assertSame(array('ja', 'en'), $view->getLangList());
+		$this->assertSame('値', $view->get('k'));
+
+		// setLang(null) の後に失敗しても、次の読み込みで初期言語を設定しない
+		$lb = new tomk79\LangBank();
+		$lb->setLang(null);
+		try{
+			$lb->load(array(__DIR__.'/testdata/regional.csv', 1));
+			$this->fail('LangBankException expected.');
+		}catch( \tomk79\LangBankException $e ){
+		}
+		$lb->load(__DIR__.'/testdata/regional.csv');
+		$this->assertNull($lb->getLang());
+		$this->assertSame('en', $lb->getDefaultLang());
 	}
 
 }

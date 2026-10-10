@@ -10,6 +10,9 @@
 	{"name": "未定義キーで空文字のデフォルト値を返す", "source": "list_twig.csv", "lang": "en", "key": "undefinedKey", "default": "", "expected": ""},
 	{"name": "第 2 引数の文字列と第 3 引数の null はデフォルト値", "source": "list_twig.csv", "lang": "en", "key": "undefinedKey", "args": ["default value", null], "expected": "default value"},
 	{"name": "第 2 引数のバインドと第 3 引数の null", "source": "list_twig.csv", "lang": "en", "key": "bind1", "args": [{"test1": "local"}, null], "expected": "test local"},
+	{"name": "第 2 引数の数値は無視する", "source": "list_twig.csv", "options": {"bind": {"test1": "global"}}, "lang": "en", "key": "bind1", "args": [123], "expected": "test global"},
+	{"name": "第 2 引数の真偽値は無視する", "source": "list_twig.csv", "options": {"bind": {"test1": "global"}}, "lang": "en", "key": "undefinedKey", "args": [true, "D {{ test1 }}"], "expected": "D global"},
+	{"name": "第 3 引数があれば第 2 引数の文字列は無視する", "source": "list_twig.csv", "lang": "en", "key": "undefinedKey", "args": ["ignored", "D"], "expected": "D"},
 	{"name": "定義済みキーではデフォルト値を使わない", "source": "list_twig.csv", "lang": "en", "key": "hello", "default": "default value", "expected": "Hello"},
 
 	{"name": "_ENV.lang", "source": "list_twig.csv", "lang": "ja", "key": "bind2", "expected": "ja"},

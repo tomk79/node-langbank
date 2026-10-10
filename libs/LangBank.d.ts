@@ -2,12 +2,16 @@
  * langbank.js
  */
 
+/**
+ * メソッドはインスタンスごとに定義される (切り離して呼べる) ため、
+ * サブクラスでメソッドをオーバーライドしても使われない。拡張にはラッパーを使う。
+ */
 declare class LangBank {
 	/**
-	 * @param src 読み込み元 (ファイルパス, CSV 文字列, パース済みの CSV 配列, またはそれらの配列)
+	 * @param src 読み込み元 (ファイルパス, CSV 文字列, パース済みの CSV 配列, またはそれらの配列)。省略すると空の辞書
 	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合や、オプションが不正な場合
 	 */
-	constructor(src: LangBank.Source, options?: LangBank.Options | null);
+	constructor(src?: LangBank.Source, options?: LangBank.Options | null);
 	/**
 	 * @deprecated 初期化は同期で終わるので、コールバックは不要。互換のために残している
 	 * @param callback 初期化後に非同期で呼ばれる
@@ -25,10 +29,10 @@ declare class LangBank {
 	readonly defaultLang: string | null;
 
 	/**
-	 * 言語を設定する
-	 * @returns 辞書にその言語 (またはフォールバック先) があれば true
+	 * 言語を設定する (null/undefined は null、それ以外は文字列にして保存する)
+	 * @returns 辞書にその言語 (またはフォールバック先) があれば true。resolveLang(lang) !== null と同じ
 	 */
-	setLang(lang: string | null): boolean;
+	setLang(lang?: string | null): boolean;
 
 	getLang(): string | null;
 
@@ -37,6 +41,15 @@ declare class LangBank {
 
 	/** 辞書にある言語の列名 */
 	getLangList(): string[];
+
+	/**
+	 * 言語を辞書の列名に解決する
+	 *
+	 * 指定した言語, options.fallback, サブタグを削った言語の順で、辞書にある最初の列名を返す。
+	 * セルの内容は調べず、デフォルト言語へのフォールバックも含めない。見つからなければ null。
+	 * @param lang 省略 (undefined) すると現在の言語。null は言語の指定なしとして null を返す
+	 */
+	resolveLang(lang?: string | null): string | null;
 
 	/**
 	 * 訳文を取得する
@@ -53,19 +66,13 @@ declare class LangBank {
 	has(key: LangBank.Key, options?: LangBank.HasOptions | null): boolean;
 
 	/** 言語を固定した、読み取り専用のビュー。辞書は共有する */
-	withLang(lang: string | null): LangBank.View;
+	withLang(lang?: string | null): LangBank.View;
 
 	/** 辞書のコピー */
 	getList(): { [key: string]: { [lang: string]: string } };
 
-	/** 辞書を追加で読み込み、セル単位の後勝ちでマージする */
+	/** 辞書を追加で読み込み、セル単位の後勝ちでマージする。エラーの場合は辞書を変えない */
 	load(src: LangBank.Source): this;
-
-	/**
-	 * 自身で resolve する Promise
-	 * @deprecated 初期化は同期で終わるので、待つ必要はない。互換のために残している
-	 */
-	ready(): Promise<this>;
 }
 
 declare namespace LangBank {
@@ -91,8 +98,8 @@ declare namespace LangBank {
 	}
 
 	interface HasOptions {
-		/** false にすると、その言語の列だけを探す (既定: true) */
-		fallback?: boolean | null;
+		/** true にすると、その言語の列だけを探す (既定: false) */
+		exact?: boolean | null;
 	}
 
 	/** withLang() が返す、言語を固定したビュー。テンプレートの _ENV と同じ形 */
@@ -104,8 +111,11 @@ declare namespace LangBank {
 		get(key: Key, bindData: BindData | null | undefined, defaultValue?: string | null): string;
 		get(key: Key, bindDataOrDefault?: BindData | string | null, defaultValue?: string | null): string;
 		has(key: Key, options?: HasOptions | null): boolean;
+		/** 省略 (undefined) するとビューの言語 */
+		resolveLang(lang?: string | null): string | null;
 		getLang(): string | null;
 		getDefaultLang(): string | null;
+		getLangList(): string[];
 	}
 
 	type ErrorCode =

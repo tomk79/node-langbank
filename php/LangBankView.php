@@ -12,20 +12,19 @@ namespace tomk79;
 final class LangBankView{
 
 	private ?string $viewLang;
-	private \Closure $getFn;
-	private \Closure $hasFn;
-	private \Closure $defaultLangFn;
+	/** @var array<string, \Closure> LangBank の内部処理 */
+	private array $fns;
 
 	/**
 	 * constructor
 	 *
 	 * @internal LangBank::withLang() を使うこと
+	 * @param string|null $lang このビューの言語
+	 * @param array<string, \Closure> $fns LangBank の内部処理 (get, has, resolveLang, getDefaultLang, getLangList)
 	 */
-	public function __construct( ?string $lang, \Closure $getFn, \Closure $hasFn, \Closure $defaultLangFn ){
+	public function __construct( ?string $lang, array $fns ){
 		$this->viewLang = $lang;
-		$this->getFn = $getFn;
-		$this->hasFn = $hasFn;
-		$this->defaultLangFn = $defaultLangFn;
+		$this->fns = $fns;
 	}
 
 	/**
@@ -34,7 +33,7 @@ final class LangBankView{
 	 * @see LangBank::get()
 	 */
 	public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ): string{
-		return ($this->getFn)($key, $bindData, $defaultValue);
+		return ($this->fns['get'])($key, $bindData, $defaultValue);
 	}
 
 	/**
@@ -43,7 +42,17 @@ final class LangBankView{
 	 * @see LangBank::has()
 	 */
 	public function has( string|int $key, ?array $options = null ): bool{
-		return ($this->hasFn)($key, $options);
+		return ($this->fns['has'])($key, $options);
+	}
+
+	/**
+	 * 言語を辞書の列名に解決する
+	 *
+	 * @see LangBank::resolveLang()
+	 * @param string|null $lang 言語コード。省略するとこのビューの言語
+	 */
+	public function resolveLang( ?string $lang = null ): ?string{
+		return ($this->fns['resolveLang'])(func_num_args() ? $lang : $this->viewLang);
 	}
 
 	/**
@@ -61,7 +70,16 @@ final class LangBankView{
 	 * @return string|null デフォルト言語
 	 */
 	public function getDefaultLang(): ?string{
-		return ($this->defaultLangFn)();
+		return ($this->fns['getDefaultLang'])();
+	}
+
+	/**
+	 * get language list
+	 *
+	 * @return array 辞書にある言語の列名
+	 */
+	public function getLangList(): array{
+		return ($this->fns['getLangList'])();
 	}
 
 }

@@ -21,16 +21,17 @@ class LangBank{
 	private array $langList = array();
 	private array $langMap = array(); // 正規化した言語コード => 列名
 	private array $renderStack = array(); // 描画中の get() の {key, lang, bind, error}
+	private bool $langIsSet = false; // setLang() が呼ばれたか
 	public ?string $defaultLang = null;
 	public ?string $lang = null;
 
 	/**
 	 * constructor
 	 *
-	 * @param mixed $source 読み込み元 (ファイルパス, CSV文字列, パース済みのCSV配列, またはそれらの配列)
+	 * @param mixed $source 読み込み元 (ファイルパス, CSV文字列, パース済みのCSV配列, またはそれらの配列)。省略すると空の辞書
 	 * @param array|null $options オプション
 	 */
-	public function __construct( mixed $source, ?array $options = null ){
+	public function __construct( mixed $source = null, ?array $options = null ){
 		$this->pathCsv = $source;
 		$this->options = $this->normalizeOptions($options ?? array());
 
@@ -40,12 +41,21 @@ class LangBank{
 	/**
 	 * load additional words
 	 *
+	 * エラーの場合は辞書を変えない。
+	 *
 	 * @param mixed $source 読み込み元
 	 * @return static 自身
 	 */
 	public function load( mixed $source ): static{
+		// すべて検証してからマージする
+		$preparedList = array();
 		foreach( $this->toCsvArrays($source) as $csvAry ){
-			$this->mergeCsv($csvAry);
+			$preparedList[] = $this->prepareCsv($csvAry);
+		}
+		foreach( $preparedList as $prepared ){
+			if( !is_null($prepared) ){
+				$this->mergeCsv($prepared);
+			}
 		}
 		return $this;
 	}
@@ -54,11 +64,12 @@ class LangBank{
 	 * set Language
 	 *
 	 * @param string|null $lang 言語コード
-	 * @return bool 辞書にその言語 (またはフォールバック先) があれば true
+	 * @return bool 辞書にその言語 (またはフォールバック先) があれば true。resolveLang($lang) !== null と同じ
 	 */
 	public function setLang( ?string $lang ): bool{
 		$this->lang = $lang;
-		return count($this->resolveLangs($lang, true, false)) > 0;
+		$this->langIsSet = true;
+		return !is_null($this->resolveLangFor($lang));
 	}
 
 	/**
@@ -77,6 +88,19 @@ class LangBank{
 	 */
 	public function getDefaultLang(): ?string{
 		return $this->defaultLang;
+	}
+
+	/**
+	 * 言語を辞書の列名に解決する
+	 *
+	 * 指定した言語, options.fallback, サブタグを削った言語の順で、辞書にある最初の列名を返す。
+	 * セルの内容は調べず、デフォルト言語へのフォールバックも含めない。
+	 *
+	 * @param string|null $lang 言語コード。省略すると現在の言語。null は言語の指定なしとして null を返す
+	 * @return string|null 辞書の列名。見つからなければ null
+	 */
+	public function resolveLang( ?string $lang = null ): ?string{
+		return $this->resolveLangFor(func_num_args() ? $lang : $this->lang);
 	}
 
 	/**
@@ -106,7 +130,7 @@ class LangBank{
 	 * has word
 	 *
 	 * @param string|int $key キー
-	 * @param array|null $options オプション (`fallback`: false にすると、現在の言語の列だけを探す)
+	 * @param array|null $options オプション (`exact`: true にすると、現在の言語の列だけを探す)
 	 * @return bool 現在の言語 (フォールバックを含む) で訳文が見つかれば true
 	 */
 	public function has( string|int $key, ?array $options = null ): bool{
@@ -120,18 +144,23 @@ class LangBank{
 	 * @return LangBankView 辞書を共有する、読み取り専用のビュー
 	 */
 	public function withLang( ?string $lang ): LangBankView{
-		return new LangBankView(
-			$lang,
-			function( $key, $bindData, $defaultValue ) use ( $lang ){
+		return new LangBankView($lang, array(
+			'get' => function( $key, $bindData, $defaultValue ) use ( $lang ){
 				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
 			},
-			function( $key, $options ) use ( $lang ){
+			'has' => function( $key, $options ) use ( $lang ){
 				return $this->hasFor($lang, $key, $options);
 			},
-			function(){
+			'resolveLang' => function( $lang ){
+				return $this->resolveLangFor($lang);
+			},
+			'getDefaultLang' => function(){
 				return $this->defaultLang;
-			}
-		);
+			},
+			'getLangList' => function(){
+				return $this->langList;
+			},
+		));
 	}
 
 	/**
@@ -203,20 +232,20 @@ class LangBank{
 	 * has() のオプションを検証し、フォールバックするかどうかを返す
 	 */
 	private function useFallbackForHas( ?array $options ): bool{
-		$fallback = true;
+		$exact = false;
 		foreach( $options ?? array() as $name => $value ){
-			if( $name !== 'fallback' ){
+			if( $name !== 'exact' ){
 				throw new LangBankException('INVALID_OPTION', 'Unknown option of has(): '.$name);
 			}
 			if( is_null($value) ){
 				continue;
 			}
 			if( !is_bool($value) ){
-				throw new LangBankException('INVALID_OPTION', 'Option "fallback" of has() must be a boolean.');
+				throw new LangBankException('INVALID_OPTION', 'Option "exact" of has() must be a boolean.');
 			}
-			$fallback = $value;
+			$exact = $value;
 		}
-		return $fallback;
+		return !$exact;
 	}
 
 	/**
@@ -323,9 +352,12 @@ class LangBank{
 	}
 
 	/**
-	 * パース済みのCSV配列を辞書にマージする
+	 * パース済みのCSV配列を検証する
+	 *
+	 * 辞書は変更しない。空のCSVなら null、そうでなければ {rows, header} を返す。
+	 * header は、列のインデックス => 言語名 (言語の列だけ)。
 	 */
-	private function mergeCsv( $csvAry ){
+	private function prepareCsv( $csvAry ){
 		$rows = array();
 		foreach( $csvAry as $row ){
 			if( is_null($row) ){
@@ -347,16 +379,31 @@ class LangBank{
 			}
 		}
 		if( !count($rows) ){
-			return;
+			return null;
 		}
+
+		$header = array();
+		foreach( $rows[0] as $idx => $cell ){
+			$lang = ''.$cell;
+			if( $idx > 0 && $lang !== '' ){
+				$header[$idx] = $lang;
+			}
+		}
+		if( !count($header) ){
+			throw new LangBankException('INVALID_CSV', 'CSV header has no language columns.');
+		}
+		return (object) array('rows' => $rows, 'header' => $header);
+	}
+
+	/**
+	 * prepareCsv() で検証したCSVを辞書にマージする
+	 */
+	private function mergeCsv( object $prepared ){
+		$rows = $prepared->rows;
 
 		// 大小文字や _/- だけが違う言語名は、最初に現れた表記の列にまとめる
 		$langIdx = array();
-		foreach( $rows[0] as $idx => $cell ){
-			$lang = ''.$cell;
-			if( $idx == 0 || $lang === '' ){
-				continue;
-			}
+		foreach( $prepared->header as $idx => $lang ){
 			$normalized = $this->normalizeLang($lang);
 			if( !array_key_exists($normalized, $this->langMap) ){
 				$this->langMap[$normalized] = $lang;
@@ -364,16 +411,14 @@ class LangBank{
 			}
 			$langIdx[$idx] = $this->langMap[$normalized];
 		}
-		if( !count($langIdx) ){
-			throw new LangBankException('INVALID_CSV', 'CSV header has no language columns.');
-		}
 
-		$firstLang = reset($langIdx);
 		if( is_null($this->defaultLang) ){
-			$this->defaultLang = $firstLang;
-		}
-		if( is_null($this->lang) ){
-			$this->lang = $firstLang;
+			// 最初に読み込んだCSVの最初の列を、デフォルト言語にする
+			// setLang() が呼ばれていなければ、初期言語にもする
+			$this->defaultLang = reset($langIdx);
+			if( !$this->langIsSet ){
+				$this->lang = $this->defaultLang;
+			}
 		}
 
 		foreach( array_slice($rows, 1) as $row ){
@@ -446,6 +491,14 @@ class LangBank{
 			$rtn[] = $this->defaultLang;
 		}
 		return $rtn;
+	}
+
+	/**
+	 * 言語を辞書の列名に解決する (デフォルト言語へのフォールバックは含めない。見つからなければ null)
+	 */
+	private function resolveLangFor( ?string $lang ): ?string{
+		$langs = $this->resolveLangs($lang, true, false);
+		return count($langs) ? $langs[0] : null;
 	}
 
 	/**
@@ -599,11 +652,18 @@ class LangBank{
 			public function has( $key, $options = null ){
 				return $this->view->has($key, $options);
 			}
+			public function resolveLang( ...$args ){
+				// 引数の省略と null を区別するため、引数をそのまま渡す
+				return $this->view->resolveLang(...$args);
+			}
 			public function getLang(){
 				return $this->view->getLang();
 			}
 			public function getDefaultLang(){
 				return $this->view->getDefaultLang();
+			}
+			public function getLangList(){
+				return $this->view->getLangList();
 			}
 		};
 	}

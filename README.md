@@ -43,7 +43,7 @@ lb.setLang('ja');
 console.log( lb.get('hello') ); // <- "こんにちわ"
 ```
 
-The constructor loads the dictionary synchronously, so you can use it right away. The callback style of v0.x (`new LangBank(source, options, callback)`) and `ready()` still work, but they are deprecated.
+The constructor loads the dictionary synchronously, so you can use it right away. The callback style of v0.x (`new LangBank(source, options, callback)`) still works, but it is deprecated.
 
 PHP:
 
@@ -57,7 +57,7 @@ $lb->get('hello'); // <- "Hello"
 
 ## Sources
 
-The 1st argument of the constructor (and of `load()`) accepts the following. NodeJS and PHP behave the same way.
+The 1st argument of the constructor (and of `load()`) accepts the following. NodeJS and PHP behave the same way. The 1st argument of the constructor can be omitted (an empty dictionary), but that of `load()` cannot.
 
 | Source | Treated as |
 |---|---|
@@ -73,6 +73,7 @@ new LangBank('"","en","ja"\n"hello","Hello","こんにちは"');
 new LangBank([["", "en", "ja"], ["hello", "Hello", "こんにちは"]]);
 new LangBank(['/path/to/common.csv', '/path/to/app.csv']);
 new LangBank(['/path/to/common.csv', isDev ? '/path/to/dev.csv' : null]);
+new LangBank(null, {"autoescape": "html"}); // an empty dictionary with options
 ```
 
 - A UTF-8 BOM, and CRLF or CR line breaks are accepted. Rows may have different numbers of columns.
@@ -93,7 +94,9 @@ They are merged **cell by cell, and later wins**: a non-empty cell overwrites th
 
 Language columns are matched case-insensitively, and `_` is treated as `-`. So a `JA` or `ja_JP` column is merged into an existing `ja` or `ja-JP` column, in the same way as above (also within one file). The column keeps the name that appeared first.
 
-The default language is the first language column of the first loaded CSV. Loading more CSV files does not change the default language or the current language.
+The default language is the first language column of the first loaded CSV (empty sources are skipped). It is also the initial language, unless `setLang()` has been called before. Loading more CSV files does not change the default language or the current language.
+
+`load()` (and the constructor) reads and checks all the given sources before merging them. If any of them causes an error, nothing is merged: the words, the languages, the current language and the default language stay as they were.
 
 
 ## get()
@@ -114,6 +117,12 @@ t('hello', 'default value'); // same as lb.get('hello', 'default value')
 ```
 
 The default value must be a string. Any other type (`null`, `false`, a number, ...) is treated as not given.
+
+The 2nd argument is not checked strictly, to keep the old interpretation of the arguments when rendering:
+
+- A string with the 3rd argument `null` or `undefined` (PHP: `null`): the default value.
+- An object (NodeJS: including an array; PHP: an array or an object): the bind data.
+- Anything else (a number, a boolean, a string with a non-null 3rd argument, ...): ignored. The data of `options.bind` and of the outer `get()` are still bound.
 
 ### Fallback of languages
 
@@ -137,17 +146,27 @@ const lb = new LangBank('/path/to/list.csv', {
 
 The languages in `options.fallback` are looked up as written: their subtags are not removed. To fall back to `zh-Hant` after `zh-Hant-TW`, write both: `["zh-Hant-TW", "zh-Hant"]`.
 
-`setLang()` always sets the language, and returns `false` if the dictionary has neither the language nor any of its fallback languages (except the default language). `getLangList()` returns the languages in the dictionary.
+`resolveLang(lang)` returns the language column that `lang` is resolved to: the first column found in the steps 1 to 3 above. It does not look at the words (a column may have an empty cell for a key, and then `get()` goes on to the next language), and it does not include the step 4 (the default language), though it returns the default language if it is found in the steps 1 to 3. It returns `null` if no column is found. Without the argument (NodeJS: or with `undefined`), it resolves the current language. `null` means "no language", and returns `null`. The same applies to the views and `_ENV`, which resolve their own language without the argument.
 
-`has(key)` also looks for the word in the same order. To check whether the word is translated into the current language itself, pass `{"fallback": false}`:
+```js
+lb.resolveLang('ja_JP'); // <- "ja"
+lb.resolveLang('en-GB'); // <- "en"
+lb.resolveLang('xx');    // <- null
+```
+
+`setLang()` always sets the language as given (NodeJS: `null` and `undefined` become `null`, and other values become strings). It returns `true` if the language is resolved (the same as `resolveLang(lang) !== null`), and `false` otherwise. Even when it returns `false`, `get()` can return the words in the default language, if any.
+
+`getLangList()` returns the language columns in the dictionary. A language in the list may not have the words for all the keys.
+
+`has(key)` also looks for the word in the same order. To check whether the word is translated into the current language itself, pass `{"exact": true}`:
 
 ```js
 lb.setLang('ja');
-lb.has('hello');                      // <- true, even if only the default language has it
-lb.has('hello', {"fallback": false}); // <- true only if the "ja" column has it
+lb.has('hello');                  // <- true, even if only the default language has it
+lb.has('hello', {"exact": true}); // <- true only if the "ja" column has it
 ```
 
-With `{"fallback": false}`, only the column of the current language (compared case-insensitively, `_` as `-`) is looked up: neither `options.fallback`, the parent languages, nor the default language.
+With `{"exact": true}`, only the column of the current language (compared case-insensitively, `_` as `-`) is looked up: neither `options.fallback`, the parent languages, nor the default language. An empty cell is not a word.
 
 ### Missing keys
 
@@ -182,7 +201,9 @@ app.get('/', function(req, res){
 });
 ```
 
-A view has `get()`, `has()`, `getLang()` and `getDefaultLang()` (and the read-only properties `lang` and `defaultLang` in NodeJS). It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object.
+A view has `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. `resolveLang()` without the argument resolves the language of the view. It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object.
+
+In NodeJS, a view also has the properties `lang` and `defaultLang`. They are really read-only (the view is frozen), and are there mainly for `_ENV.lang` and `_ENV.defaultLang` in Twig templates.
 
 
 ## Using Twig
@@ -216,7 +237,7 @@ lb.get('undefinedKey', {"name": "Tom"}, 'Hello, {{ name }}!'); // <- "Hello, Tom
 
 ### \_ENV in Twig
 
-A read-only view of the LangBank object is accessible in Twig templates as `_ENV`. It is the same as the view of [`withLang()`](#withlang) in the language of the outer `get()`: it has `lang`, `defaultLang`, `get()`, `has()`, `getLang()` and `getDefaultLang()`. Other methods (`setLang()`, `load()`, ...) are not available.
+A read-only view of the LangBank object is accessible in Twig templates as `_ENV`. It is the same as the view of [`withLang()`](#withlang) in the language of the outer `get()`: it has `lang`, `defaultLang`, `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. Other methods (`setLang()`, `load()`, ...) are not available.
 
 ```csv
 "","en"
@@ -311,19 +332,25 @@ In NodeJS, the options are copied in the constructor. Changing the object after 
 
 | Method | Description |
 |---|---|
-| `new LangBank(source[, options])` | Loads the dictionary. Throws on errors. (NodeJS: the deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
-| `setLang(lang)` | Sets the current language. Returns `false` if the dictionary has no such language (see [Fallback of languages](#fallback-of-languages)). |
-| `getLang()` | Returns the current language. |
+| `new LangBank([source][, options])` | Loads the dictionary. Throws on errors. (NodeJS: the deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
+| `setLang(lang)` | Sets the current language. Returns `false` if the language is not resolved (see [Fallback of languages](#fallback-of-languages)). |
+| `getLang()` | Returns the current language, as given to `setLang()`. |
+| `resolveLang([lang])` | Returns the language column that the language (default: the current language) is resolved to, or `null`. |
 | `getDefaultLang()` | Returns the default language. |
 | `getLangList()` | Returns the languages in the dictionary. |
 | `get(key[, bindData][, defaultValue])` | Returns the word in the current language. |
-| `has(key[, options])` | Returns `true` if a word for the key is found in the current language (including fallback, unless `{"fallback": false}`). |
+| `has(key[, options])` | Returns `true` if a word for the key is found in the current language (including fallback, unless `{"exact": true}`). |
 | `withLang(lang)` | Returns a read-only view in the given language (see [withLang()](#withlang)). |
 | `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. |
-| `load(source)` | Loads and merges another dictionary. Returns the LangBank object. |
-| `ready()` | (NodeJS only, deprecated) Returns a Promise resolved with the LangBank object. |
+| `load(source)` | Loads and merges another dictionary. Returns the LangBank object. On errors, nothing is merged. |
 
-The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Other properties are internal.
+The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Assigning to them is not supported: use `setLang()` to change the language. Other properties are internal.
+
+### Extending LangBank
+
+In NodeJS, the methods are defined for each object (so they can be called detached, like `const get = lb.get;`). Therefore, overriding the methods in a subclass is not supported: the overriding methods are not called. Wrap the LangBank object instead.
+
+In PHP, `tomk79\LangBank` can be extended, but the views (`withLang()`) and `_ENV` use the internals of LangBank directly: they do not call the overriding methods like `get()`.
 
 
 ## Errors
@@ -381,7 +408,7 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 | PHP: the methods have type declarations. A subclass that overrides them must have compatible signatures. | Update the signatures of the subclass. |
 | PHP: with `autoescape`, the result of `_ENV.get()` is not escaped again. | — |
 
-The callback style constructor still works, and is still called asynchronously. It is deprecated, as well as `ready()`.
+The callback style constructor still works, and is still called asynchronously. It is deprecated.
 
 
 ## Change Log
@@ -397,20 +424,25 @@ The callback style constructor still works, and is still called asynchronously. 
 - 言語のフォールバックを拡張した (`en-US` → `en` など)。 `fallback` オプションを追加。
 - `autoescape`, `twig` オプションを追加。HTML エスケープの既定を、NodeJS版・PHP版ともに無効に統一した。
 - `has()`, `getLangList()`, `getDefaultLang()` を追加。 `setLang()` は、辞書にない言語に対して `false` を返すようになった。
-- NodeJS版: 同期で初期化するようになった。 `ready()` を追加。 TypeScript の型定義と ESM に対応。
+- NodeJS版: 同期で初期化するようになった。 TypeScript の型定義と ESM に対応。
 - Twig テンプレートの `_ENV` を、読み取り専用のオブジェクトに変更した。 `_ENV.get()` は外側の `get()` のバインドデータを引き継ぐ。
 - 訳文の循環参照を検出し、 `CIRCULAR_REFERENCE` を投げるようになった。 (PHP版で Fatal error になっていた)
 - 大文字・小文字や `_`/`-` だけが違う言語名の列を、1 つの列にまとめるようになった。
 - `onMissing` が文字列以外を返した場合は、キーを返すようにした。
 - npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
-- `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。
-- `has()` に `{"fallback": false}` オプションを追加。
+- `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。ビューと `_ENV` には `getLangList()` と `resolveLang()` もある。
+- `has()` に `{"exact": true}` オプションを追加。
+- `resolveLang()` を追加。言語を、辞書にある最初の候補の列名に解決する。
+- コンストラクタの第 1 引数を省略できるようにした。
+- `load()` は、すべての読み込み元を検証してからマージするようになった。エラーの場合は辞書を変えない。
+- 一度 `setLang()` を呼んだ後は、 `load()` で初期言語を設定しないようにした。
+- NodeJS版: `setLang()` は、 `null`, `undefined` を `null` に、それ以外の値を文字列にして保存するようになった。
 - オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を投げるようになった。 `autoescape` に指定できる値を `false`, `true`, `"html"`, `"js"`, `"css"`, `"url"`, `"html_attr"` に限定した。
 - エラーコードの定数を追加 (`LangBank.LangBankError.FILE_NOT_FOUND`, `tomk79\LangBankException::FILE_NOT_FOUND` など)。
 - `get()` の第 2 引数が文字列で、第 3 引数が `null` (または `undefined`) の場合も、第 2 引数をデフォルト値として扱うようになった。 (ラッパー関数から引数をそのまま渡せる)
 - 読み込み元のリストの中の `null`, `''`, `[]` を読み飛ばすようになった。
 - `autoescape` が有効な場合に、 `_ENV.get()` の結果が二重にエスケープされる不具合を修正。
-- コンストラクタのコールバックと `ready()` を非推奨にした。
+- NodeJS版: コンストラクタのコールバックを非推奨にした。
 - NodeJS版: オプションをコンストラクタでコピーするようになった。
 - PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
