@@ -417,6 +417,56 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
+	 * options.bind は構築時に列挙してコピーする
+	 */
+	public function testBindOptionIsCopied(){
+		$csv = '"","en"'."\n".'"k","[{{ name }}]"'."\n";
+
+		// Traversable は列挙する (get() のバインドデータと同じ)
+		$generator = (function(){ yield 'name' => 'Gen'; })();
+		$lb = new tomk79\LangBank($csv, array('bind' => $generator));
+		$this->assertSame('[Gen]', $lb->get('k'));
+		$this->assertSame('[Gen]', $lb->get('k'));
+
+		// オブジェクトは公開プロパティを読む
+		$obj = new \stdClass();
+		$obj->name = 'Obj';
+		$lb = new tomk79\LangBank($csv, array('bind' => $obj));
+		$this->assertSame('[Obj]', $lb->get('k'));
+
+		// 構築した後にトップレベルの項目を書き換えても影響しない
+		$obj->name = 'Changed';
+		$this->assertSame('[Obj]', $lb->get('k'));
+
+		// ネストしたオブジェクトは共有し、ネストした配列は値としてコピーする
+		$csv = '"","en"'."\n".'"k","[{{ o.name }}/{{ a.name }}]"'."\n";
+		$nested = new \stdClass();
+		$nested->name = 'O1';
+		$bind = array('o' => $nested, 'a' => array('name' => 'A1'));
+		$lb = new tomk79\LangBank($csv, array('bind' => $bind));
+		$nested->name = 'O2';
+		$bind['a']['name'] = 'A2';
+		$this->assertSame('[O2/A1]', $lb->get('k'));
+
+		// options 全体の null は指定なし
+		$lb = new tomk79\LangBank($csv, null);
+		$this->assertTrue($lb->has('k', null));
+	}
+
+	/**
+	 * LangBankView は直接生成できない
+	 */
+	public function testViewCannotBeConstructed(){
+		$this->assertTrue((new \ReflectionMethod(tomk79\LangBankView::class, '__construct'))->isPrivate());
+		try{
+			new tomk79\LangBankView('ja', array());
+			$this->fail('Error expected.');
+		}catch( \Error $e ){
+			$this->assertStringContainsString('private', $e->getMessage());
+		}
+	}
+
+	/**
 	 * 読み込み元のリストの中の空の要素を読み飛ばす
 	 */
 	public function testEmptySourcesInList(){

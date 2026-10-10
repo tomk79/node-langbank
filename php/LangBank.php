@@ -182,6 +182,13 @@ class LangBank{
 					if( !is_array($value) && !is_object($value) ){
 						throw new LangBankException('INVALID_OPTION', 'Option "bind" must be an array or an object.');
 					}
+					// get() のバインドデータと同じように列挙して、浅くコピーする
+					// (オブジェクトは公開プロパティ、Traversable はその要素。Generator はここで消費する)
+					$bind = array();
+					foreach( $value as $bindKey => $bindValue ){
+						$bind[$bindKey] = $bindValue;
+					}
+					$value = $bind;
 					break;
 				case 'autoescape':
 					if( $value === true ){
@@ -584,7 +591,7 @@ class LangBank{
 
 		// バインドデータは options.bind < 外側の get() のデータ < この get() のデータ の順で上書きする
 		$parent = end($this->renderStack);
-		$bind = $parent ? $parent->bind : (array) ($this->options['bind'] ?? array());
+		$bind = $parent ? $parent->bind : ($this->options['bind'] ?? array());
 		if( is_array($bindData) || is_object($bindData) ){
 			foreach( $bindData as $bindDataKey=>$bindDataValue ){
 				$bind[$bindDataKey] = $bindDataValue;
@@ -625,7 +632,12 @@ class LangBank{
 	 * withLang() と _ENV で使う。(サブクラスでオーバーライドされた withLang() を経由しない)
 	 */
 	private function createView( ?string $lang ): LangBankView{
-		return new LangBankView($lang, array(
+		// LangBankView のコンストラクタは private なので、そのクラスのスコープに束縛したクロージャで生成する
+		// (内部処理のクロージャは、LangBank のスコープで作る)
+		$factory = \Closure::bind(static function( ?string $lang, array $fns ): LangBankView{
+			return new LangBankView($lang, $fns);
+		}, null, LangBankView::class);
+		return $factory($lang, array(
 			'get' => function( $key, $bindData, $defaultValue ) use ( $lang ){
 				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
 			},

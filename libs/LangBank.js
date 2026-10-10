@@ -84,6 +84,19 @@ function isPlainObject(value){
 }
 
 /**
+ * エラーメッセージ用に、値の型を説明する
+ */
+function describeType(value){
+	if( value === null ){
+		return 'null';
+	}
+	if( Array.isArray(value) ){
+		return 'array';
+	}
+	return typeof(value);
+}
+
+/**
  * 空の読み込み元か (読み込み元のリストの中では読み飛ばす)
  */
 function isEmptySource(value){
@@ -236,7 +249,8 @@ function normalizeOptions(options){
 		return {};
 	}
 	if( !isPlainObject(options) ){
-		throw new LangBankError('INVALID_OPTION', 'Options must be an object.');
+		// 引数の型の誤り (オプションの中身の誤りは INVALID_OPTION)
+		throw new TypeError('Options must be an object, '+describeType(options)+' given.');
 	}
 	var rtn = {};
 	Object.keys(options).forEach(function(name){
@@ -260,7 +274,7 @@ function normalizeHasOptions(options){
 		return rtn;
 	}
 	if( !isPlainObject(options) ){
-		throw new LangBankError('INVALID_OPTION', 'Options of has() must be an object.');
+		throw new TypeError('Options of has() must be an object, '+describeType(options)+' given.');
 	}
 	Object.keys(options).forEach(function(name){
 		if( name === '_keys' && Array.isArray(options[name]) ){
@@ -287,7 +301,7 @@ function normalizeHasOptions(options){
  */
 function toKey(key){
 	if( typeof(key) !== 'string' && typeof(key) !== 'number' ){
-		throw new TypeError('Key must be a string or a number, '+(key === null ? 'null' : typeof(key))+' given.');
+		throw new TypeError('Key must be a string or a number, '+describeType(key)+' given.');
 	}
 	return String(key);
 }

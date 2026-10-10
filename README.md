@@ -208,7 +208,7 @@ app.get('/', function(req, res){
 
 `withLang(null)` returns a view with no language: it looks up only the default language. Note that the argument of `withLang()` is required, unlike `resolveLang()`: it does not mean the current language.
 
-A view has `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. `resolveLang()` without the argument resolves the language of the view. It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object.
+A view has `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. `resolveLang()` without the argument resolves the language of the view. It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object. It cannot be created with `new`: use `withLang()`.
 
 In NodeJS, a view also has the properties `lang` and `defaultLang`. They are really read-only (the view is frozen), and are there mainly for `_ENV.lang` and `_ENV.defaultLang` in Twig templates.
 
@@ -330,9 +330,11 @@ The same applies to `_ENV.get()` in the words: do not pass bind data as its defa
 
 In PHP, pass the options as an associative array, and `onMissing` as a callable.
 
-The options are checked in the constructor: an unknown option name (e.g. a typo like `onmissing`) or a value of a wrong type throws `INVALID_OPTION`. An option whose value is `null` or `undefined` is treated as not given. In PHP, passing options that are not an array (to the constructor or to `has()`) throws a `TypeError`.
+The options are checked in the constructor: an unknown option name (e.g. a typo like `onmissing`) or a value of a wrong type throws `INVALID_OPTION`. An option whose value is `null` or `undefined` is treated as not given. The options as a whole (of the constructor and of `has()`) may be omitted or `null` (NodeJS: or `undefined`). Otherwise, they must be an object other than an array (NodeJS) / an array (PHP), and any other value throws a `TypeError`. (NodeJS: a function as the 2nd argument of the constructor is the deprecated callback.)
 
-In NodeJS, the options are copied in the constructor: adding, removing or replacing the properties of the given object after that does not affect the LangBank object. The copy is shallow, though: the objects nested in `bind` are shared, and modifying them does affect it.
+The options are copied in the constructor: adding, removing or replacing the items of the given options (and of `bind` and `fallback`) after that does not affect the LangBank object. The copy is shallow, though: the objects nested in `bind` are shared, and modifying them does affect it (in PHP, nested arrays are copied as values, as usual).
+
+In PHP, `bind` is read in the same way as the bind data of `get()`: the public properties of an object, or the items of a `Traversable`. A `Traversable` like a `Generator` is read (and consumed) in the constructor.
 
 
 ## API
@@ -362,7 +364,15 @@ In PHP, `tomk79\LangBank` can be extended, but the views (`withLang()`) and `_EN
 
 ## Errors
 
-Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankException` (PHP), except that a wrong type of an argument (e.g. a `null` key of `get()`) throws a `TypeError`. The error code is `error.code` (NodeJS) / `$e->getErrorCode()` (PHP).
+Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankException` (PHP). The error code is `error.code` (NodeJS) / `$e->getErrorCode()` (PHP).
+
+A wrong type of the following arguments throws a `TypeError` instead:
+
+- The key of `get()` and `has()` (e.g. `null`). See [get()](#get).
+- The options of the constructor and of `has()` as a whole, if they are neither omitted nor `null` (NodeJS: or `undefined`), and are not an object other than an array (NodeJS) / an array (PHP). See [Options](#options). An invalid option in them throws `INVALID_OPTION`.
+- PHP: the other arguments with type declarations (e.g. an array given to `setLang()`).
+
+Other arguments follow their own rules: an invalid source throws `INVALID_SOURCE`, and the 2nd and 3rd arguments of `get()` are interpreted as described in [get()](#get) (a value of another type is ignored).
 
 | Code | When |
 |---|---|
@@ -373,7 +383,7 @@ Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankExcepti
 | `CSV_PARSE_ERROR` | Failed to parse the CSV text (NodeJS only). |
 | `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` (NodeJS) / the chain of `$e->getPrevious()` (PHP: Twig may wrap it in its own error). |
 | `CIRCULAR_REFERENCE` | A word refers to itself through `_ENV.get()`. |
-| `INVALID_OPTION` | An unknown option, or an invalid value of an option (also of `has()`). |
+| `INVALID_OPTION` | An unknown option, or an invalid value of an option (also of `has()`). Options of a wrong type as a whole (e.g. a string) throw a `TypeError` instead. |
 
 The codes are also available as constants: `LangBank.LangBankError.FILE_NOT_FOUND` (NodeJS) / `tomk79\LangBankException::FILE_NOT_FOUND` (PHP).
 
@@ -411,7 +421,7 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 | `_ENV.get()` inherits the bind data of the outer `get()`. | Pass the data to `_ENV.get()` explicitly to override it. |
 | Language columns that differ only in case or `_`/`-` (e.g. `ja` and `JA`) are merged into one column. | — |
 | NodeJS: files other than `libs/LangBank.js` cannot be required directly (`exports` in package.json). | Require `langbank`. |
-| An unknown option or an invalid value of an option throws `INVALID_OPTION`. PHP: options that are not an array throw a `TypeError`. | Fix the options. |
+| An unknown option or an invalid value of an option throws `INVALID_OPTION`. Options of a wrong type as a whole (NodeJS: other than an object, an array included; PHP: other than an array) throw a `TypeError`. | Fix the options. |
 | PHP: the methods have type declarations. A subclass that overrides them must have compatible signatures. | Update the signatures of the subclass. |
 | PHP: with `autoescape`, the result of `_ENV.get()` is not escaped again. | — |
 | NodeJS: a key of `get()` or `has()` that is not a string or a number (e.g. `undefined`, `null`) throws a `TypeError`. In Twig templates, `_ENV.get()` with an undefined variable throws a `TEMPLATE_ERROR` (also in PHP). | Pass a string. In templates, use `_ENV.get(name\|default(''))`. |
@@ -445,13 +455,13 @@ The callback style constructor still works, and is still called asynchronously. 
 - `load()` は、すべての読み込み元を検証してからマージするようになった。エラーの場合は辞書を変えない。
 - 一度 `setLang()` を呼んだ後は、 `load()` で初期言語を設定しないようにした。
 - NodeJS版: `setLang()` は、 `null`, `undefined` を `null` に、それ以外の値を文字列にして保存するようになった。
-- オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を投げるようになった。 `autoescape` に指定できる値を `false`, `true`, `"html"`, `"js"`, `"css"`, `"url"`, `"html_attr"` に限定した。
+- オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を投げるようになった。オプション全体が `null` (NodeJS版は `undefined` も) でも、配列以外のオブジェクト (PHP版: 配列) でもなければ `TypeError` を投げる。 `autoescape` に指定できる値を `false`, `true`, `"html"`, `"js"`, `"css"`, `"url"`, `"html_attr"` に限定した。
 - エラーコードの定数を追加 (`LangBank.LangBankError.FILE_NOT_FOUND`, `tomk79\LangBankException::FILE_NOT_FOUND` など)。
 - `get()` の第 2 引数が文字列で、第 3 引数が `null` (または `undefined`) の場合も、第 2 引数をデフォルト値として扱うようになった。 (ラッパー関数から引数をそのまま渡せる)
 - 読み込み元のリストの中の `null`, `''`, `[]` を読み飛ばすようになった。
 - `autoescape` が有効な場合に、 `_ENV.get()` の結果が二重にエスケープされる不具合を修正。
 - NodeJS版: コンストラクタのコールバックを非推奨にした。
-- NodeJS版: オプションをコンストラクタでコピーするようになった。 (浅いコピー)
+- オプションをコンストラクタでコピーするようになった。 (浅いコピー。PHP版の `bind` は、 `get()` のバインドデータと同じように列挙して読む)
 - NodeJS版: `new` を付けずにコンストラクタを呼ぶと、 `TypeError` を投げるようになった。 (グローバル変数を書き換えていた)
 - PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()`, `has()` のキーが文字列・数値以外の場合に、 `TypeError` を投げるようになった。 Twig テンプレートの中の `_ENV.get()`, `_ENV.has()` も、両言語でキーの型を検証する。

@@ -479,11 +479,6 @@ describe('Interface', function() {
 	});
 
 	it("不正なオプションは INVALID_OPTION", function() {
-		['x', 1, true, []].forEach(function(options){
-			assertLangBankError(function(){
-				new LangBank(listCsv, options);
-			}, 'INVALID_OPTION');
-		});
 		[
 			{"unknown": 1},
 			{"onmissing": function(){}},
@@ -504,6 +499,39 @@ describe('Interface', function() {
 		assert.throws(function(){
 			new LangBank(listCsv, {"onmissing": function(){}});
 		}, /onmissing/);
+	});
+
+	it("オブジェクト以外のオプションは TypeError", function() {
+		['x', 1, true, []].forEach(function(options){
+			assert.throws(function(){
+				new LangBank(listCsv, options);
+			}, function(e){
+				return e instanceof TypeError && !(e instanceof LangBank.LangBankError);
+			});
+		});
+		var lb = new LangBank(listCsv);
+		var view = lb.withLang('en');
+		['x', 1, true, [], function(){}].forEach(function(options){
+			assert.throws(function(){ lb.has('hello', options); }, TypeError);
+			assert.throws(function(){ view.has('hello', options); }, TypeError);
+		});
+		[null, undefined].forEach(function(options){
+			assert.strictEqual(lb.has('hello', options), true);
+			assert.strictEqual(view.has('hello', options), true);
+			assert.strictEqual(new LangBank(listCsv, options).get('hello'), 'Hello');
+		});
+
+		// テンプレートの中では TEMPLATE_ERROR に包まれる
+		lb = new LangBank('"","en"'+"\n"+'"x","{{ _ENV.has(\'hello\', \'x\') }}"'+"\n");
+		assert.throws(function(){
+			lb.get('x');
+		}, function(e){
+			return e instanceof LangBank.LangBankError && e.code === 'TEMPLATE_ERROR' && e.cause instanceof TypeError;
+		});
+
+		// 関数は (非推奨の) コールバックとして扱う
+		lb = new LangBank(listCsv, function(){});
+		assert.strictEqual(lb.get('hello'), 'Hello');
 	});
 
 	it("null や undefined のオプションは指定なしとして扱う", function() {
@@ -587,7 +615,7 @@ describe('Interface', function() {
 		assert.strictEqual(lb.has('hello', {"exact": true}), false);
 		assert.strictEqual(lb.has('hello', {"exact": null}), true);
 		assert.strictEqual(lb.has('hello', {"exact": false}), true);
-		[{"x": 1}, {"fallback": false}, {"exact": "yes"}, 'x'].forEach(function(options){
+		[{"x": 1}, {"fallback": false}, {"exact": "yes"}].forEach(function(options){
 			assertLangBankError(function(){
 				lb.has('hello', options);
 			}, 'INVALID_OPTION');

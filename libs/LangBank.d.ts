@@ -10,6 +10,7 @@ declare class LangBank {
 	/**
 	 * @param src 読み込み元 (ファイルパス, CSV 文字列, パース済みの CSV 配列, またはそれらの配列)。省略すると空の辞書
 	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合や、オプションが不正な場合
+	 * @throws {TypeError} options が null, undefined, 配列以外のオブジェクトのいずれでもない場合 (配列は TypeError。関数は非推奨のコールバック)
 	 */
 	constructor(src?: LangBank.Source, options?: LangBank.Options | null);
 	/**
@@ -65,7 +66,8 @@ declare class LangBank {
 
 	/**
 	 * 現在の言語 (既定ではフォールバックを含む) で訳文が見つかれば true
-	 * @throws {TypeError} キーが文字列でも数値でもない場合
+	 * @throws {TypeError} キーが文字列でも数値でもない場合や、options が null, undefined, 配列以外のオブジェクトのいずれでもない場合
+	 * @throws {LangBank.LangBankError} options に未知のキーや不正な値がある場合 (INVALID_OPTION)
 	 */
 	has(key: LangBank.Key, options?: LangBank.HasOptions | null): boolean;
 
@@ -118,6 +120,10 @@ declare namespace LangBank {
 		get(key: Key, defaultValue: string): string;
 		get(key: Key, bindData: BindData | null | undefined, defaultValue?: string | null): string;
 		get(key: Key, bindDataOrDefault?: BindData | string | null, defaultValue?: string | null): string;
+		/**
+		 * @throws {TypeError} キーが文字列でも数値でもない場合や、options が null, undefined, 配列以外のオブジェクトのいずれでもない場合
+		 * @throws {LangBankError} options に未知のキーや不正な値がある場合 (INVALID_OPTION)
+		 */
 		has(key: Key, options?: HasOptions | null): boolean;
 		/** 省略 (undefined) するとビューの言語 */
 		resolveLang(lang?: string | null): string | null;

@@ -8,6 +8,7 @@ namespace tomk79;
  * 言語を固定した、読み取り専用のビュー
  *
  * LangBank::withLang() が返す。辞書は元の LangBank と共有する。
+ * コンストラクタは private で、直接は生成できない。
  */
 final class LangBankView{
 
@@ -18,11 +19,13 @@ final class LangBankView{
 	/**
 	 * constructor
 	 *
-	 * @internal LangBank::withLang() を使うこと
+	 * 直接は生成できない。LangBank::withLang() を使うこと。
+	 * (LangBank は、このクラスのスコープに束縛したクロージャから生成する)
+	 *
 	 * @param string|null $lang このビューの言語
 	 * @param array<string, \Closure> $fns LangBank の内部処理 (get, has, resolveLang, getDefaultLang, getLangList)
 	 */
-	public function __construct( ?string $lang, array $fns ){
+	private function __construct( ?string $lang, array $fns ){
 		$this->viewLang = $lang;
 		$this->fns = $fns;
 	}
