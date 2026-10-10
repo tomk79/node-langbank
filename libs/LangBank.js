@@ -91,10 +91,12 @@ function isEmptySource(value){
 }
 
 /**
- * 空でない2次元配列か
+ * パース済みCSV配列に見えるか (配列の行を 1 つ以上含み、それ以外の行は null か undefined)
  */
 function is2dArray(value){
-	return Array.isArray(value) && value.length > 0 && value.every(Array.isArray);
+	return Array.isArray(value) && value.some(Array.isArray) && value.every(function(row){
+		return Array.isArray(row) || row === null || row === undefined;
+	});
 }
 
 /**
@@ -182,7 +184,7 @@ var OPTION_NORMALIZERS = {
 		}
 		var rtn = {};
 		for( var key in value ){
-			rtn[key] = value[key];
+			setProp(rtn, key, value[key]);
 		}
 		return rtn;
 	},
@@ -220,7 +222,7 @@ var OPTION_NORMALIZERS = {
 			if( !Array.isArray(langs) || !langs.every(function(l){ return typeof(l) === 'string'; }) ){
 				throw new LangBankError('INVALID_OPTION', 'Option "fallback" must map a language to a string or an array of strings: '+lang);
 			}
-			rtn[lang] = langs.slice();
+			setProp(rtn, lang, langs.slice());
 		});
 		return rtn;
 	}
@@ -261,6 +263,11 @@ function normalizeHasOptions(options){
 		throw new LangBankError('INVALID_OPTION', 'Options of has() must be an object.');
 	}
 	Object.keys(options).forEach(function(name){
+		if( name === '_keys' && Array.isArray(options[name]) ){
+			// Twig.js のハッシュリテラル ({'exact': true}) が持つ内部プロパティ。
+			// テンプレートの中から _ENV.has() にオプションを渡せるように無視する (テンプレートの外から渡しても同じ)
+			return;
+		}
 		if( name !== 'exact' ){
 			throw new LangBankError('INVALID_OPTION', 'Unknown option of has(): '+name);
 		}
@@ -306,6 +313,9 @@ function setProp(obj, key, value){
  * LangBank
  */
 var LangBank = function(src, options, callback){
+	if( !(this instanceof LangBank) ){
+		throw new TypeError("Class constructor LangBank cannot be invoked without 'new'");
+	}
 	var _this = this;
 	if( typeof(options) === 'function' ){
 		callback = options;
@@ -503,18 +513,18 @@ var LangBank = function(src, options, callback){
 		var bind = {};
 		var parentBind = renderStack.length ? renderStack[renderStack.length - 1].bind : (_this.options.bind || {});
 		for( var parentKey in parentBind ){
-			bind[parentKey] = parentBind[parentKey];
+			setProp(bind, parentKey, parentBind[parentKey]);
 		}
 		if( bindData && typeof(bindData) === 'object' ){
 			for( var bindDataKey in bindData ){
-				bind[bindDataKey] = bindData[bindDataKey];
+				setProp(bind, bindDataKey, bindData[bindDataKey]);
 			}
 		}
 		var data = {};
 		for( var dataKey in bind ){
-			data[dataKey] = bind[dataKey];
+			setProp(data, dataKey, bind[dataKey]);
 		}
-		data._ENV = createView(lang, true);
+		setProp(data, '_ENV', createView(lang, true));
 
 		var frame = {'key': key, 'lang': lang, 'bind': bind, 'error': null};
 		renderStack.push(frame);

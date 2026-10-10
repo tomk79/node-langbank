@@ -119,7 +119,7 @@ class LangBank{
 	 *
 	 * @param string|int $key キー
 	 * @param mixed $bindData バインドデータ (配列またはオブジェクト), またはデフォルト値
-	 * @param mixed $defaultValue デフォルト(キーが未定義だった場合)の戻り値。文字列以外は指定なしとして扱う
+	 * @param mixed $defaultValue デフォルト値 (訳文が見つからなかった場合の戻り値)。文字列以外は指定なしとして扱う
 	 * @return string 設定された言語に対応する文字列
 	 */
 	public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ): string{
@@ -140,7 +140,7 @@ class LangBank{
 	/**
 	 * 言語を固定したビューを返す
 	 *
-	 * @param string|null $lang 言語コード
+	 * @param string|null $lang 言語コード。null ならデフォルト言語だけを探すビュー
 	 * @return LangBankView 辞書を共有する、読み取り専用のビュー
 	 */
 	public function withLang( ?string $lang ): LangBankView{
@@ -289,18 +289,21 @@ class LangBank{
 	}
 
 	/**
-	 * 空でない2次元配列か
+	 * パース済みCSV配列に見えるか (配列の行を 1 つ以上含み、それ以外の行は null)
 	 */
 	private function is2dArray( $value ){
-		if( !is_array($value) || !count($value) ){
+		if( !is_array($value) ){
 			return false;
 		}
+		$hasRow = false;
 		foreach( $value as $row ){
-			if( !is_array($row) ){
+			if( is_array($row) ){
+				$hasRow = true;
+			}elseif( !is_null($row) ){
 				return false;
 			}
 		}
-		return true;
+		return $hasRow;
 	}
 
 	/**

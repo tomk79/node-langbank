@@ -429,6 +429,17 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
+	 * 読み込み元のリストの中の CSV 配列に空の行があってもよい
+	 */
+	public function testNullRowsInSourceList(){
+		$lb = new tomk79\LangBank(array(array(array('', 'en'), null, array('a', 'A')), $this->listCsv));
+		$this->assertSame('A', $lb->get('a'));
+		$this->assertSame('Hello', $lb->get('hello'));
+		$lb = new tomk79\LangBank(array($this->listCsv, array(null, array('', 'en'), array('b', 'B'))));
+		$this->assertSame('B', $lb->get('b'));
+	}
+
+	/**
 	 * has() の exact オプション
 	 */
 	public function testHasExact(){

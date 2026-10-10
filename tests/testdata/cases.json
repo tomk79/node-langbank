@@ -82,5 +82,7 @@
 	{"name": "循環参照: 複数のキー", "source": "env.csv", "lang": "en", "key": "loop_a", "error": "CIRCULAR_REFERENCE", "message": "loop_a -> loop_b -> loop_c -> loop_a"},
 	{"name": "循環参照: 途中のキーから", "source": "env.csv", "lang": "en", "key": "loop_b", "error": "CIRCULAR_REFERENCE", "message": "loop_b -> loop_c -> loop_a -> loop_b"},
 	{"name": "循環参照: デフォルト値から自分を参照", "source": "env.csv", "lang": "en", "key": "undefinedKey", "default": "{{ _ENV.get('undefinedKey') }}", "error": "CIRCULAR_REFERENCE"},
+	{"name": "_ENV.has() にオプションを渡せる", "source": "env.csv", "lang": "ja", "key": "has_exact", "expected": "y/n"},
+	{"name": "_ENV.has() にオプションを渡せる (訳文がある言語)", "source": "env.csv", "lang": "en", "key": "has_exact", "expected": "y/y"},
 	{"name": "入れ子のエラーは包み直さない", "source": "env.csv", "lang": "en", "key": "outer", "error": "TEMPLATE_ERROR", "message": "key \"bad\""}
 ]

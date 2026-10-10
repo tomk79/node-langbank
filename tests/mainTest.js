@@ -535,6 +535,36 @@ describe('Interface', function() {
 		assert.strictEqual(lb.get('color'), '顏色');
 	});
 
+	it("読み込み元のリストの中の CSV 配列に空の行があってもよい", function() {
+		var lb = new LangBank([[["", "en"], null, ["a", "A"], undefined], listCsv]);
+		assert.strictEqual(lb.get('a'), 'A');
+		assert.strictEqual(lb.get('hello'), 'Hello');
+		lb = new LangBank([listCsv, [null, ["", "en"], ["b", "B"]]]);
+		assert.strictEqual(lb.get('b'), 'B');
+	});
+
+	it("new を付けずに呼ぶと TypeError", function() {
+		assert.throws(function(){
+			LangBank(listCsv);
+		}, TypeError);
+		assert.strictEqual(typeof(globalThis.setLang), 'undefined');
+	});
+
+	it("__proto__ というキーのオプションやバインドデータを扱える", function() {
+		var lb = new LangBank(__dirname+'/testdata/regional.csv', {
+			"fallback": JSON.parse('{"__proto__": ["ja"]}')
+		});
+		lb.setLang('__proto__');
+		assert.strictEqual(lb.get('hello'), 'こんにちは');
+
+		lb = new LangBank('"","en"'+"\n"+'"k","[{{ x }}]"', {
+			"bind": JSON.parse('{"__proto__": {"x": "inherited"}}')
+		});
+		assert.strictEqual(lb.get('k'), '[]');
+		assert.strictEqual(lb.get('k', JSON.parse('{"__proto__": {"x": "inherited"}}')), '[]');
+		assert.strictEqual(lb.get('k', {"x": "X"}), '[X]');
+	});
+
 	it("読み込み元のリストの中の空の要素を読み飛ばす", function() {
 		var lb = new LangBank([listCsv, null, undefined, '', []]);
 		assert.strictEqual(lb.get('hello'), 'Hello');

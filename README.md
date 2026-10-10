@@ -57,7 +57,7 @@ $lb->get('hello'); // <- "Hello"
 
 ## Sources
 
-The 1st argument of the constructor (and of `load()`) accepts the following. NodeJS and PHP behave the same way. The 1st argument of the constructor can be omitted (an empty dictionary), but that of `load()` cannot.
+The 1st argument of the constructor (and of `load()`) accepts the following. NodeJS and PHP behave the same way, except for boolean cells (see below). The 1st argument of the constructor can be omitted (an empty dictionary). That of `load()` is required, but an empty source like `null` loads nothing (and `load()` returns the LangBank object as usual).
 
 | Source | Treated as |
 |---|---|
@@ -65,7 +65,7 @@ The 1st argument of the constructor (and of `load()`) accepts the following. Nod
 | A string that contains a line break (`\n` or `\r`) | CSV text. |
 | A string without line breaks | A file path. Throws `FILE_NOT_FOUND` if the file does not exist. |
 | A 2-dimensional array | Parsed CSV rows. Each row must be an array (or `null`), and each cell must be a scalar value (or `null`). |
-| An array of the above (strings and/or 2-dimensional arrays) | Multiple sources, merged in order. `null`, `undefined`, `''` and `[]` in the array are skipped. |
+| An array of the above (strings and/or 2-dimensional arrays) | Multiple sources, merged in order. `null`, `undefined`, `''` and `[]` in the array are skipped. A 2-dimensional array in the list may also have `null` rows. |
 
 ```js
 new LangBank('/path/to/list.csv');
@@ -79,6 +79,7 @@ new LangBank(null, {"autoescape": "html"}); // an empty dictionary with options
 - A UTF-8 BOM, and CRLF or CR line breaks are accepted. Rows may have different numbers of columns.
 - A backslash is not an escape character (RFC 4180). Write `""` for a double quote in a quoted cell.
 - Files must be in UTF-8. In PHP, Shift_JIS and EUC-JP files are also detected and converted.
+- In a 2-dimensional array, a boolean cell is converted to a string in the way of each language: NodeJS makes `"true"` and `"false"`, while PHP makes `"1"` and `""` (an empty cell). To share an array between NodeJS and PHP, use strings.
 - Invalid CSV (e.g. a stray `"` in a cell, or a quote that is not closed) is handled differently: NodeJS throws `CSV_PARSE_ERROR`, while PHP reads it in its own way without an error. To share a CSV file between NodeJS and PHP, keep it valid.
 
 ### Multiple dictionaries
@@ -170,11 +171,13 @@ With `{"exact": true}`, only the column of the current language (compared case-i
 
 ### Missing keys
 
-When no word is found, `get()` returns:
+When no non-empty word is found in the current language or its fallback languages (including the default language), `get()` returns:
 
 1. The default value, if given (an empty string `''` is returned as is).
 2. Otherwise, the return value of `options.onMissing(key, lang)`, if given and it is a string.
 3. Otherwise, **the key itself**.
+
+The 2nd argument `lang` of `onMissing` is the language of the `get()`: the initial language, or the language given to `setLang()` or `withLang()`. It is not resolved to a language column (use `resolveLang(lang)` for it), and may be `null`.
 
 `onMissing` may return nothing, for example to only log missing words:
 
@@ -200,6 +203,8 @@ app.get('/', function(req, res){
 	res.send( t.get('hello') );
 });
 ```
+
+`withLang(null)` returns a view with no language: it looks up only the default language. Note that the argument of `withLang()` is required, unlike `resolveLang()`: it does not mean the current language.
 
 A view has `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. `resolveLang()` without the argument resolves the language of the view. It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object.
 
@@ -318,21 +323,21 @@ The same applies to `_ENV.get()` in the words: do not pass bind data as its defa
 | `bind` | `{}` | Data bound to all Twig templates (an object; in PHP, an array or an object). |
 | `autoescape` | `false` | Escaping strategy of Twig: `false`, `true` (same as `"html"`), `"html"`, `"js"`, `"css"`, `"url"` or `"html_attr"`. |
 | `twig` | `true` | `false` to return words without evaluating Twig. |
-| `onMissing` | (none) | `function(key, lang)` that returns the string for a missing key. If it returns a non-string, the key is used. |
+| `onMissing` | (none) | `function(key, lang)` that returns the string when no word is found (see [Missing keys](#missing-keys)). If it returns a non-string, the key is used. |
 | `fallback` | `{}` | Fallback languages for each language: `{"lang": ["fallback", ...]}`. A single language can be written as a string. |
 
 In PHP, pass the options as an associative array, and `onMissing` as a callable.
 
 The options are checked in the constructor: an unknown option name (e.g. a typo like `onmissing`) or a value of a wrong type throws `INVALID_OPTION`. An option whose value is `null` or `undefined` is treated as not given. In PHP, passing options that are not an array (to the constructor or to `has()`) throws a `TypeError`.
 
-In NodeJS, the options are copied in the constructor. Changing the object after that does not affect the LangBank object.
+In NodeJS, the options are copied in the constructor: adding, removing or replacing the properties of the given object after that does not affect the LangBank object. The copy is shallow, though: the objects nested in `bind` are shared, and modifying them does affect it.
 
 
 ## API
 
 | Method | Description |
 |---|---|
-| `new LangBank([source][, options])` | Loads the dictionary. Throws on errors. (NodeJS: the deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
+| `new LangBank([source][, options])` | Loads the dictionary. Throws on errors. (NodeJS: `new` is required. The deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
 | `setLang(lang)` | Sets the current language. Returns `false` if the language is not resolved (see [Fallback of languages](#fallback-of-languages)). |
 | `getLang()` | Returns the current language, as given to `setLang()`. |
 | `resolveLang([lang])` | Returns the language column that the language (default: the current language) is resolved to, or `null`. |
@@ -340,7 +345,7 @@ In NodeJS, the options are copied in the constructor. Changing the object after 
 | `getLangList()` | Returns the languages in the dictionary. |
 | `get(key[, bindData][, defaultValue])` | Returns the word in the current language. |
 | `has(key[, options])` | Returns `true` if a word for the key is found in the current language (including fallback, unless `{"exact": true}`). |
-| `withLang(lang)` | Returns a read-only view in the given language (see [withLang()](#withlang)). |
+| `withLang(lang)` | Returns a read-only view in the given language (see [withLang()](#withlang)). `null` for no language. |
 | `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. |
 | `load(source)` | Loads and merges another dictionary. Returns the LangBank object. On errors, nothing is merged. |
 
@@ -431,7 +436,7 @@ The callback style constructor still works, and is still called asynchronously. 
 - `onMissing` が文字列以外を返した場合は、キーを返すようにした。
 - npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
 - `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。ビューと `_ENV` には `getLangList()` と `resolveLang()` もある。
-- `has()` に `{"exact": true}` オプションを追加。
+- `has()` に `{"exact": true}` オプションを追加。 Twig テンプレートの中の `_ENV.has()` にも渡せる。
 - `resolveLang()` を追加。言語を、辞書にある最初の候補の列名に解決する。
 - コンストラクタの第 1 引数を省略できるようにした。
 - `load()` は、すべての読み込み元を検証してからマージするようになった。エラーの場合は辞書を変えない。
@@ -443,7 +448,8 @@ The callback style constructor still works, and is still called asynchronously. 
 - 読み込み元のリストの中の `null`, `''`, `[]` を読み飛ばすようになった。
 - `autoescape` が有効な場合に、 `_ENV.get()` の結果が二重にエスケープされる不具合を修正。
 - NodeJS版: コンストラクタのコールバックを非推奨にした。
-- NodeJS版: オプションをコンストラクタでコピーするようになった。
+- NodeJS版: オプションをコンストラクタでコピーするようになった。 (浅いコピー)
+- NodeJS版: `new` を付けずにコンストラクタを呼ぶと、 `TypeError` を投げるようになった。 (グローバル変数を書き換えていた)
 - PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
