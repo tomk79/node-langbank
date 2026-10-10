@@ -435,43 +435,36 @@ The callback style constructor still works, and is still called asynchronously. 
 
 - 破壊的な変更を含みます。 "Migration from v0.3" を参照してください。
 - 未定義のキーに対して、 `---` ではなくキーそのものを返すようになった。 `onMissing` オプションで変更できる。
-- 読み込みや Twig の評価に失敗したとき、例外を投げるようになった。
+- 読み込みや Twig の評価に失敗したとき、エラーコードを持つ例外 (NodeJS版: `LangBankError`, PHP版: `tomk79\LangBankException`) を投げるようになった。エラーコードの定数もある (`LangBank.LangBankError.FILE_NOT_FOUND`, `tomk79\LangBankException::FILE_NOT_FOUND` など)。
 - 改行を含まない文字列をファイルパスとして扱い、ファイルがなければ例外を投げるようになった。
 - PHP版: CSV 文字列とパース済みの配列を受け取れるようになった。
-- 複数の CSV をマージできるようになった。 `load()` を追加。
+- 複数の CSV をマージできるようになった。 `load()` を追加。1 つの CSV の中で重複したキーも、セルごとにマージする。
 - 言語のフォールバックを拡張した (`en-US` → `en` など)。 `fallback` オプションを追加。
 - `autoescape`, `twig` オプションを追加。HTML エスケープの既定を、NodeJS版・PHP版ともに無効に統一した。
-- `has()`, `getLangList()`, `getDefaultLang()` を追加。 `setLang()` は、辞書にない言語に対して `false` を返すようになった。
+- `has()`, `getLangList()`, `getDefaultLang()`, `resolveLang()` を追加。 `setLang()` は、辞書にない言語に対して `false` を返すようになった。
+- `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。
 - NodeJS版: 同期で初期化するようになった。 TypeScript の型定義と ESM に対応。
+- NodeJS版: コンストラクタのコールバックを非推奨にした。
 - Twig テンプレートの `_ENV` を、読み取り専用のオブジェクトに変更した。 `_ENV.get()` は外側の `get()` のバインドデータを引き継ぐ。
 - 訳文の循環参照を検出し、 `CIRCULAR_REFERENCE` を投げるようになった。 (PHP版で Fatal error になっていた)
 - 大文字・小文字や `_`/`-` だけが違う言語名の列を、1 つの列にまとめるようになった。
-- `onMissing` が文字列以外を返した場合は、キーを返すようにした。
-- npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
-- `withLang()` を追加。言語を固定した、読み取り専用のビューを返す。ビューと `_ENV` には `getLangList()` と `resolveLang()` もある。
-- `has()` に `{"exact": true}` オプションを追加。 Twig テンプレートの中の `_ENV.has()` にも渡せる。
-- `resolveLang()` を追加。言語を、辞書にある最初の候補の列名に解決する。
+- オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を、オプション全体の型の誤りに対して `TypeError` を投げるようになった。
 - コンストラクタの第 1 引数を省略できるようにした。
-- `load()` は、すべての読み込み元を検証してからマージするようになった。エラーの場合は辞書を変えない。
-- 一度 `setLang()` を呼んだ後は、 `load()` で初期言語を設定しないようにした。
-- NodeJS版: `setLang()` は、 `null`, `undefined` を `null` に、それ以外の値を文字列にして保存するようになった。
-- オプションを検証し、未知のオプションや不正な値に対して `INVALID_OPTION` を投げるようになった。オプション全体が `null` (NodeJS版は `undefined` も) でも、配列以外のオブジェクト (PHP版: 配列) でもなければ `TypeError` を投げる。 `autoescape` に指定できる値を `false`, `true`, `"html"`, `"js"`, `"css"`, `"url"`, `"html_attr"` に限定した。
-- エラーコードの定数を追加 (`LangBank.LangBankError.FILE_NOT_FOUND`, `tomk79\LangBankException::FILE_NOT_FOUND` など)。
 - `get()` の第 2 引数が文字列で、第 3 引数が `null` (または `undefined`) の場合も、第 2 引数をデフォルト値として扱うようになった。 (ラッパー関数から引数をそのまま渡せる)
-- 読み込み元のリストの中の `null`, `''`, `[]` を読み飛ばすようになった。
-- `autoescape` が有効な場合に、 `_ENV.get()` の結果が二重にエスケープされる不具合を修正。
-- NodeJS版: コンストラクタのコールバックを非推奨にした。
-- オプションをコンストラクタでコピーするようになった。 (浅いコピー。PHP版の `bind` は、 `get()` のバインドデータと同じように列挙して読む)
+- `getList()` は、すべてのキーにすべての言語を持たせ、ない訳文を `''` で返すようになった。NodeJS版は辞書のコピーを返す。
+- NodeJS版: `setLang()` は、 `null`, `undefined` を `null` に、それ以外の値を文字列にして保存するようになった。
 - NodeJS版: `new` を付けずにコンストラクタを呼ぶと、 `TypeError` を投げるようになった。 (グローバル変数を書き換えていた)
-- PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()`, `has()` のキーが文字列・数値以外の場合に、 `TypeError` を投げるようになった。 Twig テンプレートの中の `_ENV.get()`, `_ENV.has()` も、両言語でキーの型を検証する。
-- `getList()` は、すべてのキーにすべての言語を持たせ、ない訳文を `''` で返すようになった。
+- NodeJS版: オプションをコンストラクタでコピーするようになった。 (浅いコピー)
+- NodeJS版: `libs/LangBank.js` 以外のファイルを直接 `require` できなくなった (package.json の `exports`)。
+- PHP版: メソッドに型宣言を付けた。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
-- NodeJS版: `getList()` が辞書のコピーを返すようになった。
 - PHP版: `get()` のバインドデータに `null` を渡すと Warning が発生する不具合を修正。
+- PHP版: `_ENV.get()` の結果が、二重に HTML エスケープされる不具合を修正。
 - PHP版: Shift_JIS のファイルが文字化けする不具合を修正。CR だけで改行された CSV を読めるようになった。 `tomk79/filesystem` への依存を削除。
-- サポートする環境を、 Node.js >= 14, Twig.js ^1.17, PHP >= 8.1, Twig ^3.27 に変更。 (PHP 8.0 以前で使える Twig には、すべてセキュリティ勧告が出ているため)
+- npm と Composer のパッケージから、テストなどの不要なファイルを除いた。
+- サポートする環境を、 Node.js >= 14, Twig.js ^1.17, PHP >= 8.1 (mbstring 拡張が必要), Twig ^3.27 に変更。 (PHP 8.0 以前で使える Twig には、すべてセキュリティ勧告が出ているため)
 
 ### langbank v0.3.2 (2025-11-16)
 
