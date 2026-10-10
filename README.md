@@ -206,7 +206,7 @@ app.get('/', function(req, res){
 });
 ```
 
-`withLang(null)` returns a view with no language: it looks up only the default language. Note that the argument of `withLang()` is required, unlike `resolveLang()`: it does not mean the current language.
+`withLang(null)` (NodeJS: or `withLang(undefined)`) returns a view with no language: it looks up only the default language. Note that the argument of `withLang()` is required, unlike `resolveLang()`: it does not mean the current language.
 
 A view has `get()`, `has()`, `resolveLang()`, `getLang()`, `getDefaultLang()` and `getLangList()`. `resolveLang()` without the argument resolves the language of the view. It shares the dictionary with the LangBank object, so the words loaded later with `load()` are also available. `setLang()` does not affect the views. In PHP, the view is a `tomk79\LangBankView` object. It cannot be created with `new`: use `withLang()`.
 
@@ -353,7 +353,7 @@ In PHP, `bind` is read in the same way as the bind data of `get()`: the public p
 | `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. Every key has all the languages of `getLangList()`, and a missing word is `''`. The words are not rendered, and fallback is not applied. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. In NodeJS, the order of the properties may differ from `getLangList()` (e.g. for numeric language names): iterate `getLangList()` if the order matters. |
 | `load(source)` | Loads and merges another dictionary. Returns the LangBank object. On errors, nothing is merged. |
 
-The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Assigning to them is not supported: use `setLang()` to change the language. Other properties are internal.
+The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Assigning to them is not supported: use `setLang()` to change the language. (They are actually writable for compatibility: in NodeJS, they are `readonly` only in the TypeScript definition, and in PHP, they are public properties.) Other properties are internal.
 
 ### Extending LangBank
 

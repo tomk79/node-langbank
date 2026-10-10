@@ -33,7 +33,7 @@ declare class LangBank {
 	 * 言語を設定する (null/undefined は null、それ以外は文字列にして保存する)
 	 * @returns 辞書にその言語 (またはフォールバック先) があれば true。resolveLang(lang) !== null と同じ
 	 */
-	setLang(lang: string | null): boolean;
+	setLang(lang: string | null | undefined): boolean;
 
 	getLang(): string | null;
 
@@ -71,8 +71,11 @@ declare class LangBank {
 	 */
 	has(key: LangBank.Key, options?: LangBank.HasOptions | null): boolean;
 
-	/** 言語を固定した、読み取り専用のビュー。辞書は共有する。null ならデフォルト言語だけを探すビュー */
-	withLang(lang: string | null): LangBank.View;
+	/**
+	 * 言語を固定した、読み取り専用のビュー。辞書は共有する
+	 * @param lang null (undefined も null と同じ) ならデフォルト言語だけを探すビュー。省略はできない (現在の言語の意味にはならない)
+	 */
+	withLang(lang: string | null | undefined): LangBank.View;
 
 	/** 辞書のコピー。すべてのキーが getLangList() のすべての言語を持つ (訳文がなければ '') */
 	getList(): { [key: string]: { [lang: string]: string } };
