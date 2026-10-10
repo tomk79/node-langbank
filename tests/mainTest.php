@@ -692,4 +692,99 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('en', $lb->getDefaultLang());
 	}
 
+
+	/**
+	 * キーは文字列か整数に限る
+	 */
+	public function testKeyType(){
+		$lb = new tomk79\LangBank('"","en"'."\n".'"123","num"'."\n".'"t_get","{{ _ENV.get(nokey) }}"'."\n".'"t_has","{{ _ENV.has(nokey) }}"'."\n".'"t_num","{{ _ENV.get(123) }}"'."\n");
+		$view = $lb->withLang('en');
+		foreach( array(
+			fn() => $lb->get(null),
+			fn() => $lb->has(null),
+			fn() => $view->get(null),
+			fn() => $view->has(null),
+			fn() => $lb->get(array('a')),
+		) as $fn ){
+			try{
+				$fn();
+				$this->fail('TypeError expected.');
+			}catch( \TypeError $e ){
+			}
+		}
+		$this->assertSame('num', $lb->get(123));
+		$this->assertTrue($lb->has(123));
+		$this->assertSame('', $lb->get(''));
+		$this->assertSame('num', $lb->get('t_num'));
+
+		// テンプレートの中の型エラーは TEMPLATE_ERROR になる
+		foreach( array('t_get', 't_has') as $key ){
+			$e = $this->assertLangBankError(function() use ($lb, $key){
+				$lb->get($key);
+			}, 'TEMPLATE_ERROR');
+			$this->assertStringContainsString('must be of type string|int', $e->getMessage());
+		}
+	}
+
+	/**
+	 * テンプレートの中のエラーの扱い
+	 */
+	public function testErrorsInTemplate(){
+		// 未定義の変数は default('') で空文字のキーにできる
+		$lb = new tomk79\LangBank('"","en"'."\n".'"t","[{{ _ENV.get(nokey|default(\'\')) }}]"'."\n");
+		$this->assertSame('[]', $lb->get('t'));
+
+		// onMissing が投げた例外は、外側のキーの TEMPLATE_ERROR に包む
+		$boom = new \Exception('boom');
+		$lb = new tomk79\LangBank('"","en"'."\n".'"outer","{{ _ENV.get(\'inner\') }}"'."\n", array(
+			'onMissing' => function() use ($boom){ throw $boom; },
+		));
+		$e = $this->assertLangBankError(function() use ($lb){
+			$lb->get('outer');
+		}, 'TEMPLATE_ERROR');
+		$this->assertStringContainsString('key "outer"', $e->getMessage());
+		$found = false;
+		for( $prev = $e->getPrevious(); $prev; $prev = $prev->getPrevious() ){
+			$found = $found || $prev === $boom;
+		}
+		$this->assertTrue($found, 'The original exception is in the chain of getPrevious().');
+
+		// テンプレートの外では、そのまま投げる
+		try{
+			$lb->get('inner');
+			$this->fail('Exception expected.');
+		}catch( \Exception $e ){
+			$this->assertSame($boom, $e);
+		}
+	}
+
+	/**
+	 * getList() は、すべてのキーにすべての言語を持たせる
+	 */
+	public function testGetListHasAllLangs(){
+		$lb = new tomk79\LangBank('"","en"'."\n".'"a","A"'."\n");
+		$lb->load('"","JA","ja"'."\n".'"b","B",""'."\n");
+		$this->assertSame(array('en', 'JA'), $lb->getLangList());
+		$this->assertSame(array(
+			'a' => array('en' => 'A', 'JA' => ''),
+			'b' => array('en' => '', 'JA' => 'B'),
+		), $lb->getList());
+	}
+
+	/**
+	 * _ENV は、サブクラスでオーバーライドした withLang() を経由しない
+	 */
+	public function testEnvDoesNotUseOverriddenWithLang(){
+		$lb = new class(__DIR__.'/testdata/list_twig.csv') extends tomk79\LangBank{
+			public int $calls = 0;
+			public function withLang( ?string $lang ): tomk79\LangBankView{
+				$this->calls ++;
+				return parent::withLang('anylang');
+			}
+		};
+		$lb->setLang('ja');
+		$this->assertSame('ja/こんにちわ', $lb->get('nokey', null, '{{ _ENV.getLang() }}/{{ _ENV.get("hello") }}'));
+		$this->assertSame(0, $lb->calls);
+	}
+
 }

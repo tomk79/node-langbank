@@ -144,32 +144,24 @@ class LangBank{
 	 * @return LangBankView 辞書を共有する、読み取り専用のビュー
 	 */
 	public function withLang( ?string $lang ): LangBankView{
-		return new LangBankView($lang, array(
-			'get' => function( $key, $bindData, $defaultValue ) use ( $lang ){
-				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
-			},
-			'has' => function( $key, $options ) use ( $lang ){
-				return $this->hasFor($lang, $key, $options);
-			},
-			'resolveLang' => function( $lang ){
-				return $this->resolveLangFor($lang);
-			},
-			'getDefaultLang' => function(){
-				return $this->defaultLang;
-			},
-			'getLangList' => function(){
-				return $this->langList;
-			},
-		));
+		return $this->createView($lang);
 	}
 
 	/**
 	 * get word list
 	 *
-	 * @return array 辞書 (`[key => [lang => word]]`)
+	 * @return array 辞書 (`[key => [lang => word]]`)。すべてのキーが getLangList() のすべての言語を持つ (訳文がなければ '')
 	 */
 	public function getList(): array{
-		return $this->langDb;
+		// すべてのキーに、辞書にあるすべての言語を持たせる (セルがなければ '')
+		$rtn = array();
+		foreach( $this->langDb as $key => $entry ){
+			$rtn[$key] = array();
+			foreach( $this->langList as $lang ){
+				$rtn[$key][$lang] = $entry[$lang] ?? '';
+			}
+		}
+		return $rtn;
 	}
 
 
@@ -628,6 +620,31 @@ class LangBank{
 	}
 
 	/**
+	 * 言語を固定したビューを作る
+	 *
+	 * withLang() と _ENV で使う。(サブクラスでオーバーライドされた withLang() を経由しない)
+	 */
+	private function createView( ?string $lang ): LangBankView{
+		return new LangBankView($lang, array(
+			'get' => function( $key, $bindData, $defaultValue ) use ( $lang ){
+				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
+			},
+			'has' => function( $key, $options ) use ( $lang ){
+				return $this->hasFor($lang, $key, $options);
+			},
+			'resolveLang' => function( $lang ){
+				return $this->resolveLangFor($lang);
+			},
+			'getDefaultLang' => function(){
+				return $this->defaultLang;
+			},
+			'getLangList' => function(){
+				return $this->langList;
+			},
+		));
+	}
+
+	/**
 	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
 	 *
 	 * Twig は `_ENV.lang` を getLang() で解決する。
@@ -639,7 +656,7 @@ class LangBank{
 		$getFn = function( $key, $bindData, $defaultValue ) use ( $lang ){
 			return $this->getFor($lang, $key, $bindData, $defaultValue);
 		};
-		return new class($this->withLang($lang), $getFn, ($this->options['autoescape'] ?? false) !== false){
+		return new class($this->createView($lang), $getFn, ($this->options['autoescape'] ?? false) !== false){
 			private $view;
 			private $getFn;
 			private $markup;
@@ -648,11 +665,11 @@ class LangBank{
 				$this->getFn = $getFn;
 				$this->markup = $markup;
 			}
-			public function get( $key, $bindData = null, $defaultValue = null ){
+			public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ){
 				$result = ($this->getFn)($key, $bindData, $defaultValue);
 				return ($this->markup && $result->trusted) ? new \Twig\Markup($result->text, 'UTF-8') : $result->text;
 			}
-			public function has( $key, $options = null ){
+			public function has( string|int $key, ?array $options = null ){
 				return $this->view->has($key, $options);
 			}
 			public function resolveLang( ...$args ){

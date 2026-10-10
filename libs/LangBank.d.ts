@@ -56,19 +56,23 @@ declare class LangBank {
 	 *
 	 * 第 2 引数が文字列で、第 3 引数が null か undefined なら、第 2 引数をデフォルト値として扱う。
 	 * 訳文が見つからず (フォールバックを含む)、デフォルト値もなければ、onMissing の戻り値、またはキーを返す。
+	 * @throws {TypeError} キーが文字列でも数値でもない場合
 	 */
 	get(key: LangBank.Key): string;
 	get(key: LangBank.Key, defaultValue: string): string;
 	get(key: LangBank.Key, bindData: LangBank.BindData | null | undefined, defaultValue?: string | null): string;
 	get(key: LangBank.Key, bindDataOrDefault?: LangBank.BindData | string | null, defaultValue?: string | null): string;
 
-	/** 現在の言語 (既定ではフォールバックを含む) で訳文が見つかれば true */
+	/**
+	 * 現在の言語 (既定ではフォールバックを含む) で訳文が見つかれば true
+	 * @throws {TypeError} キーが文字列でも数値でもない場合
+	 */
 	has(key: LangBank.Key, options?: LangBank.HasOptions | null): boolean;
 
 	/** 言語を固定した、読み取り専用のビュー。辞書は共有する。null ならデフォルト言語だけを探すビュー */
 	withLang(lang: string | null): LangBank.View;
 
-	/** 辞書のコピー */
+	/** 辞書のコピー。すべてのキーが getLangList() のすべての言語を持つ (訳文がなければ '') */
 	getList(): { [key: string]: { [lang: string]: string } };
 
 	/** 辞書を追加で読み込み、セル単位の後勝ちでマージする。エラーの場合は辞書を変えない */

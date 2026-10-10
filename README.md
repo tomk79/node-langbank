@@ -117,6 +117,8 @@ function t(key, a, b){ return lb.get(key, a, b); }
 t('hello', 'default value'); // same as lb.get('hello', 'default value')
 ```
 
+The key must be a string or a number. In NodeJS, any other type (`undefined`, `null`, a boolean, an object, ...) throws a `TypeError`. In PHP, the key is declared as `string|int`: as usual in PHP, a `null` or an array throws a `TypeError`, while a boolean or a float is converted unless `strict_types` is declared. The same applies to `has()`, the views and `_ENV` (in a Twig template, the `TypeError` becomes a `TEMPLATE_ERROR`; use `_ENV.get(name|default(''))` for a variable that may be undefined).
+
 The default value must be a string. Any other type (`null`, `false`, a number, ...) is treated as not given.
 
 The 2nd argument is not checked strictly, to keep the old interpretation of the arguments when rendering:
@@ -339,14 +341,14 @@ In NodeJS, the options are copied in the constructor: adding, removing or replac
 |---|---|
 | `new LangBank([source][, options])` | Loads the dictionary. Throws on errors. (NodeJS: `new` is required. The deprecated 3rd argument `callback` is called asynchronously after the initialization.) |
 | `setLang(lang)` | Sets the current language. Returns `false` if the language is not resolved (see [Fallback of languages](#fallback-of-languages)). |
-| `getLang()` | Returns the current language, as given to `setLang()`. |
+| `getLang()` | Returns the current language: initially the default language (or `null` for an empty dictionary), and after `setLang()`, the value stored by it. |
 | `resolveLang([lang])` | Returns the language column that the language (default: the current language) is resolved to, or `null`. |
 | `getDefaultLang()` | Returns the default language. |
 | `getLangList()` | Returns the languages in the dictionary. |
 | `get(key[, bindData][, defaultValue])` | Returns the word in the current language. |
 | `has(key[, options])` | Returns `true` if a word for the key is found in the current language (including fallback, unless `{"exact": true}`). |
 | `withLang(lang)` | Returns a read-only view in the given language (see [withLang()](#withlang)). `null` for no language. |
-| `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. |
+| `getList()` | Returns a copy of the whole dictionary: `{key: {lang: word}}`. Every key has all the languages of `getLangList()`, and a missing word is `''`. The words are not rendered, and fallback is not applied. In PHP, a numeric key like `"123"` becomes an integer key, as PHP arrays do. In NodeJS, the order of the properties may differ from `getLangList()` (e.g. for numeric language names): iterate `getLangList()` if the order matters. |
 | `load(source)` | Loads and merges another dictionary. Returns the LangBank object. On errors, nothing is merged. |
 
 The properties `lang` and `defaultLang` are still readable for compatibility, but use `getLang()` and `getDefaultLang()` instead. Assigning to them is not supported: use `setLang()` to change the language. Other properties are internal.
@@ -360,7 +362,7 @@ In PHP, `tomk79\LangBank` can be extended, but the views (`withLang()`) and `_EN
 
 ## Errors
 
-Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankException` (PHP). The error code is `error.code` (NodeJS) / `$e->getErrorCode()` (PHP).
+Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankException` (PHP), except that a wrong type of an argument (e.g. a `null` key of `get()`) throws a `TypeError`. The error code is `error.code` (NodeJS) / `$e->getErrorCode()` (PHP).
 
 | Code | When |
 |---|---|
@@ -369,7 +371,7 @@ Errors are thrown as `LangBank.LangBankError` (NodeJS) / `tomk79\LangBankExcepti
 | `INVALID_SOURCE` | Unsupported type of source, or an invalid row or cell in a CSV array. |
 | `INVALID_CSV` | The CSV header has no language columns. |
 | `CSV_PARSE_ERROR` | Failed to parse the CSV text (NodeJS only). |
-| `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` / `$e->getPrevious()`. |
+| `TEMPLATE_ERROR` | Failed to render the Twig template in `get()`. The original error is in `error.cause` (NodeJS) / the chain of `$e->getPrevious()` (PHP: Twig may wrap it in its own error). |
 | `CIRCULAR_REFERENCE` | A word refers to itself through `_ENV.get()`. |
 | `INVALID_OPTION` | An unknown option, or an invalid value of an option (also of `has()`). |
 
@@ -383,7 +385,7 @@ try{
 }
 ```
 
-An error in `_ENV.get()` is thrown as is from the outer `get()`. For example, a Twig error in the inner word is a `TEMPLATE_ERROR` of the inner key.
+A LangBank error in `_ENV.get()` is thrown as is from the outer `get()`. For example, a Twig error in the inner word is a `TEMPLATE_ERROR` of the inner key. Other errors in a template, including a `TypeError` of `_ENV.get()` and an error thrown by `onMissing`, are wrapped in a `TEMPLATE_ERROR` of the outer key (the original error is in `error.cause` / the chain of `$e->getPrevious()`).
 
 Even when a (deprecated) callback is given, errors are thrown from the constructor synchronously.
 
@@ -412,6 +414,7 @@ v1.0.0 has some breaking changes. To keep the old behavior, see "How to keep the
 | An unknown option or an invalid value of an option throws `INVALID_OPTION`. PHP: options that are not an array throw a `TypeError`. | Fix the options. |
 | PHP: the methods have type declarations. A subclass that overrides them must have compatible signatures. | Update the signatures of the subclass. |
 | PHP: with `autoescape`, the result of `_ENV.get()` is not escaped again. | — |
+| NodeJS: a key of `get()` or `has()` that is not a string or a number (e.g. `undefined`, `null`) throws a `TypeError`. In Twig templates, `_ENV.get()` with an undefined variable throws a `TEMPLATE_ERROR` (also in PHP). | Pass a string. In templates, use `_ENV.get(name\|default(''))`. |
 
 The callback style constructor still works, and is still called asynchronously. It is deprecated.
 
@@ -451,6 +454,8 @@ The callback style constructor still works, and is still called asynchronously. 
 - NodeJS版: オプションをコンストラクタでコピーするようになった。 (浅いコピー)
 - NodeJS版: `new` を付けずにコンストラクタを呼ぶと、 `TypeError` を投げるようになった。 (グローバル変数を書き換えていた)
 - PHP版: メソッドに型宣言を付けた。
+- NodeJS版: `get()`, `has()` のキーが文字列・数値以外の場合に、 `TypeError` を投げるようになった。 Twig テンプレートの中の `_ENV.get()`, `_ENV.has()` も、両言語でキーの型を検証する。
+- `getList()` は、すべてのキーにすべての言語を持たせ、ない訳文を `''` で返すようになった。
 - NodeJS版: `get()` に渡したバインドデータが、後の呼び出しに残る不具合を修正。
 - NodeJS版: コールバックを省略して options を渡すと、例外が発生する不具合を修正。
 - NodeJS版: `getList()` が辞書のコピーを返すようになった。

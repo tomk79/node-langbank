@@ -818,6 +818,61 @@ describe('Interface', function() {
 		assert.deepStrictEqual(lb.getList(), {"k": {"en": "v"}});
 	});
 
+	it("キーは文字列か数値に限る", function() {
+		var lb = new LangBank('"","en"\n"123","num"\n"t_get","{{ _ENV.get(nokey) }}"\n"t_has","{{ _ENV.has(nokey) }}"\n"t_num","{{ _ENV.get(123) }}"\n');
+		var view = lb.withLang('en');
+		[undefined, null, true, {}, ['a']].forEach(function(key){
+			assert.throws(function(){ lb.get(key); }, TypeError);
+			assert.throws(function(){ lb.has(key); }, TypeError);
+			assert.throws(function(){ view.get(key); }, TypeError);
+			assert.throws(function(){ view.has(key); }, TypeError);
+		});
+		assert.throws(function(){ lb.get(); }, TypeError);
+		assert.strictEqual(lb.get(123), 'num');
+		assert.strictEqual(lb.has(123), true);
+		assert.strictEqual(lb.get(''), '');
+		assert.strictEqual(lb.get('t_num'), 'num');
+
+		// テンプレートの中の型エラーは TEMPLATE_ERROR になる
+		['t_get', 't_has'].forEach(function(key){
+			assert.throws(function(){ lb.get(key); }, function(e){
+				assert.ok(e instanceof LangBank.LangBankError);
+				assert.strictEqual(e.code, 'TEMPLATE_ERROR');
+				assert.ok(/Key must be a string or a number/.test(e.message));
+				return true;
+			});
+		});
+	});
+
+	it("テンプレートの中のエラーの扱い", function() {
+		// 未定義の変数は default('') で空文字のキーにできる
+		var lb = new LangBank('"","en"\n"t","[{{ _ENV.get(nokey|default(\'\')) }}]"\n');
+		assert.strictEqual(lb.get('t'), '[]');
+
+		// onMissing が投げた例外は、外側のキーの TEMPLATE_ERROR に包む
+		var boom = new Error('boom');
+		lb = new LangBank('"","en"\n"outer","{{ _ENV.get(\'inner\') }}"\n', {"onMissing": function(){ throw boom; }});
+		assert.throws(function(){ lb.get('outer'); }, function(e){
+			assert.ok(e instanceof LangBank.LangBankError);
+			assert.strictEqual(e.code, 'TEMPLATE_ERROR');
+			assert.ok(/key "outer"/.test(e.message));
+			assert.strictEqual(e.cause, boom);
+			return true;
+		});
+		// テンプレートの外では、そのまま投げる
+		assert.throws(function(){ lb.get('inner'); }, function(e){ return e === boom; });
+	});
+
+	it("getList() は、すべてのキーにすべての言語を持たせる", function() {
+		var lb = new LangBank('"","en"\n"a","A"\n');
+		lb.load('"","JA","ja"\n"b","B",""\n');
+		assert.deepStrictEqual(lb.getLangList(), ['en', 'JA']);
+		assert.deepStrictEqual(lb.getList(), {
+			"a": {"en": "A", "JA": ""},
+			"b": {"en": "", "JA": "B"}
+		});
+	});
+
 	it("サブクラスでメソッドをオーバーライドしても使われない (ラッパーを使う)", function() {
 		class My extends LangBank {
 			get(){ return 'overridden'; }

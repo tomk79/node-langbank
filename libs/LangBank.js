@@ -283,6 +283,16 @@ function normalizeHasOptions(options){
 }
 
 /**
+ * キーを検証して文字列にする (文字列か数値に限る)
+ */
+function toKey(key){
+	if( typeof(key) !== 'string' && typeof(key) !== 'number' ){
+		throw new TypeError('Key must be a string or a number, '+(key === null ? 'null' : typeof(key))+' given.');
+	}
+	return String(key);
+}
+
+/**
  * get() の引数を解釈する
  *
  * 第 2 引数が文字列で、第 3 引数が null か undefined なら、第 2 引数をデフォルト値とする。
@@ -553,9 +563,10 @@ var LangBank = function(src, options, callback){
 	 * (キーそのものや onMissing の戻り値は、テンプレートの中で安全な文字列として扱わない)
 	 */
 	function getFor(lang, args){
+		var key = toKey(args[0]);
 		var parsed = parseGetArgs(args);
 		try{
-			return getWord(toStr(args[0]), parsed.bindData, parsed.defaultValue, lang);
+			return getWord(key, parsed.bindData, parsed.defaultValue, lang);
 		}catch(e){
 			if( e instanceof LangBankError && renderStack.length && !renderStack[renderStack.length - 1].error ){
 				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
@@ -594,7 +605,7 @@ var LangBank = function(src, options, callback){
 	 * 指定した言語で has() する
 	 */
 	function hasFor(lang, key, options){
-		return findValue(toStr(key), lang, !normalizeHasOptions(options).exact) !== null;
+		return findValue(toKey(key), lang, !normalizeHasOptions(options).exact) !== null;
 	}
 
 	/**
@@ -685,12 +696,13 @@ var LangBank = function(src, options, callback){
 	 * get word list
 	 */
 	this.getList = function(){
+		// すべてのキーに、辞書にあるすべての言語を持たせる (セルがなければ '')
 		var rtn = {};
 		for( var key in _this.langDb ){
 			var entry = {};
-			for( var lang in _this.langDb[key] ){
-				setProp(entry, lang, _this.langDb[key][lang]);
-			}
+			langList.forEach(function(lang){
+				setProp(entry, lang, (lang in _this.langDb[key]) ? _this.langDb[key][lang] : '');
+			});
 			setProp(rtn, key, entry);
 		}
 		return rtn;
