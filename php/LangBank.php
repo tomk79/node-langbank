@@ -185,13 +185,8 @@ class LangBank{
 					if( !is_array($value) && !is_object($value) ){
 						throw new LangBankException('INVALID_OPTION', 'Option "bind" must be an array or an object.');
 					}
-					// get() のバインドデータと同じように列挙して、浅くコピーする
-					// (オブジェクトは公開プロパティ、Traversable はその要素。Generator はここで消費する)
-					$bind = array();
-					foreach( $value as $bindKey => $bindValue ){
-						$bind[$bindKey] = $bindValue;
-					}
-					$value = $bind;
+					// get() のバインドデータと同じように読んで、浅くコピーする (Generator はここで消費する)
+					$value = self::readBindData($value);
 					break;
 				case 'template':
 					if( !is_bool($value) ){
@@ -728,8 +723,7 @@ class LangBank{
 
 		$bind = $this->options['bind'] ?? array();
 		if( is_array($bindData) || is_object($bindData) ){
-			// 配列の要素、オブジェクトの公開プロパティ、Traversable の要素
-			foreach( $bindData as $bindDataKey => $bindDataValue ){
+			foreach( self::readBindData($bindData) as $bindDataKey => $bindDataValue ){
 				$bind[$bindDataKey] = $bindDataValue;
 			}
 		}
@@ -741,6 +735,29 @@ class LangBank{
 			}
 			return $this->toPlaceholderValue($bind[$name] ?? null, $name, $this->describeTemplate($isDefault, $key, $lang));
 		}, $template, -1, $count, PREG_OFFSET_CAPTURE);
+	}
+
+	/**
+	 * バインドデータを配列にする
+	 *
+	 * 配列はその要素、Traversable はその要素、それ以外のオブジェクトは公開プロパティを読む。
+	 * 値はコピーする (参照は引き継がない)。
+	 */
+	private static function readBindData( array|object $data ): array{
+		if( is_object($data) && !($data instanceof \Traversable) ){
+			// LangBank のスコープで読むと、LangBank (とそのサブクラス) のインスタンスの
+			// private, protected プロパティも見えるので、クラスのスコープを持たないクロージャで読む
+			// (get_object_vars() は参照を保つので、下の foreach で値をコピーする)
+			$getPublicVars = \Closure::bind(static function( object $obj ): array{
+				return get_object_vars($obj);
+			}, null, null);
+			$data = $getPublicVars($data);
+		}
+		$rtn = array();
+		foreach( $data as $key => $value ){
+			$rtn[$key] = $value;
+		}
+		return $rtn;
 	}
 
 	/**

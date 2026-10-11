@@ -3,6 +3,7 @@
 	{"name":"no final newline","csv":"a,b","rows":[["a","b"]]},
 	{"name":"CRLF","csv":"a,b\r\nc,d\r\n","rows":[["a","b"],["c","d"]]},
 	{"name":"CR only","csv":"a,b\rc,d\r","rows":[["a","b"],["c","d"]]},
+	{"name":"CR only, with CR in a quoted cell","csv":"\"\",\"en\"\r\"k\",\"a\rb\"\r","rows":[["","en"],["k","a\nb"]]},
 	{"name":"CR in a file with LF","csv":"a,b\rc,d\n","rows":[["a","b\rc","d"]]},
 	{"name":"BOM","csv":"\ufeffa,b\n","rows":[["a","b"]]},
 	{"name":"BOM not at the start","csv":"a,\ufeffb\n","rows":[["a","\ufeffb"]]},

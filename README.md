@@ -79,7 +79,7 @@ new LangBank(null, {"fallback": {"pt-BR": "pt"}}); // an empty dictionary with o
 ```
 
 - A UTF-8 BOM is accepted. Rows may have different numbers of columns. Empty rows are skipped.
-- Line breaks may be LF or CRLF. CR only line breaks are accepted when the text has no LF at all. Line breaks in a quoted cell are kept as they are.
+- Line breaks may be LF or CRLF. CR only line breaks are accepted when the text has no LF at all: then every CR is converted to LF beforehand, including the CRs in quoted cells. Otherwise, line breaks in a quoted cell are kept as they are.
 - A backslash is not an escape character (RFC 4180). Write `""` for a double quote in a quoted cell.
 - Files must be in UTF-8. In PHP, Shift_JIS and EUC-JP files are also detected and converted.
 - In a 2-dimensional array, a boolean cell is converted to a string in the way of each language: NodeJS makes `"true"` and `"false"`, while PHP makes `"1"` and `""` (an empty cell). To share an array between NodeJS and PHP, use strings.

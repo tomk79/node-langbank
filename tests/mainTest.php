@@ -350,6 +350,39 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('[gen][]', $lb->get('k', (function(){ yield 'x' => 'gen'; })()));
 		$this->assertSame('[][]', $lb->get('k', new \ArrayObject(array())));
 
+		// LangBank (とそのサブクラス) のインスタンスでも、公開プロパティだけを読む
+		$lb = new tomk79\LangBank('"","en"'."\n".'"k","[{{ secret }}][{{ options }}][{{ langDb }}][{{ pub }}][{{ lang }}]"'."\n");
+		$sub = new class extends tomk79\LangBank{ protected $secret = 'hidden'; public $pub = 'P'; };
+		$sub->setLang('xx');
+		$this->assertSame('[][][][P][xx]', $lb->get('k', $sub));
+		$this->assertSame('[][][][][en]', $lb->get('k', $lb));
+		$lb2 = new tomk79\LangBank('"","en"'."\n".'"k","[{{ secret }}][{{ options }}][{{ pub }}]"'."\n", array('bind' => $sub));
+		$this->assertSame('[][][P]', $lb2->get('k'));
+
+		// 参照のプロパティや要素も、値としてコピーする (元の変数を書き換えず、後から変えても影響しない)
+		foreach( array('object', 'array') as $type ){
+			$value = 'before';
+			if( $type === 'object' ){
+				$bind = new \stdClass();
+				$bind->x =& $value;
+			}else{
+				$bind = array('x' => &$value);
+			}
+			$lb = new tomk79\LangBank(array(array('', 'en'), array('k', '{{ x }}')), array('bind' => $bind));
+			$this->assertSame('override', $lb->get('k', array('x' => 'override')), $type);
+			$this->assertSame('before', $value, $type);
+			$this->assertSame('before', $lb->get('k'), $type);
+			$value = 'changed';
+			$this->assertSame('before', $lb->get('k'), $type);
+
+			// get() のバインドデータも同じ
+			$lb = new tomk79\LangBank(array(array('', 'en'), array('k', '{{ x }}')), array('bind' => array('x' => 'global')));
+			$value = 'local';
+			$this->assertSame('local', $lb->get('k', $bind), $type);
+			$this->assertSame('local', $value, $type);
+			$this->assertSame('global', $lb->get('k'), $type);
+		}
+
 		// getList() と has() は訳文をそのまま扱う
 		$lb = new tomk79\LangBank(__DIR__.'/testdata/placeholders.csv');
 		$this->assertSame('Hi {{ name }}', $lb->getList()['greet']['en']);
