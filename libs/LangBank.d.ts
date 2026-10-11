@@ -78,8 +78,9 @@ declare class LangBank {
 
 declare namespace LangBank {
 	type CsvCell = string | number | boolean | null | undefined;
-	type CsvArray = Array<CsvCell[] | null | undefined>;
-	type Source = string | CsvArray | Array<string | CsvArray | null | undefined> | null | undefined;
+	/** パース済みの CSV (LangBank は書き換えないので、読み取り専用の配列も渡せる) */
+	type CsvArray = ReadonlyArray<ReadonlyArray<CsvCell> | null | undefined>;
+	type Source = string | CsvArray | ReadonlyArray<string | CsvArray | null | undefined> | null | undefined;
 	/**
 	 * プレースホルダーに差し込むデータ
 	 *

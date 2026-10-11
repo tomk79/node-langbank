@@ -1,6 +1,6 @@
 {
   "name": "langbank",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Simple multilingual dictionary library for Node.js, browsers and PHP, driven by a CSV word list with simple placeholders.",
   "main": "libs/LangBank.js",
   "types": "libs/LangBank.d.ts",
