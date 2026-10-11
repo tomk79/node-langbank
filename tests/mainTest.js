@@ -3,7 +3,7 @@ var path = require('path');
 var fs = require('fs');
 var LangBank = require('../libs/LangBank.js');
 
-var listCsv = __dirname+'/testdata/list_twig.csv';
+var listCsv = __dirname+'/testdata/list.csv';
 var csvCode = '"","en","ja","anylang"'+"\n"+'"goodmorning","Good Morning!","おはよう！","good morning in anylang"'+"\n"+'"helloworld","Hello World","こんにちわ世界","helloworld in anylang"';
 
 function assertLangBankError(fn, code){
@@ -17,113 +17,76 @@ function assertLangBankError(fn, code){
 
 describe('main Test', function() {
 
-	it("no options", function(done) {
-		this.timeout(60*1000);
+	it("no options", function() {
+		var lb = new LangBank(listCsv);
 
-		var lb = new LangBank(listCsv, function(){
+		// get(), setLang()
+		lb.setLang("en");
+		assert.strictEqual(lb.getLang(), 'en');
+		assert.strictEqual(lb.get('hello'), 'Hello');
+		assert.strictEqual(lb.get('no-ja1'), 'NoJa1');
+		assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
+		assert.strictEqual(lb.get('no-en1'), 'no-en1');
+		assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
+		assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
 
-			// get(), setLang()
-			lb.setLang("en");
-			assert.strictEqual(lb.getLang(), 'en');
-			assert.strictEqual(lb.get('hello'), 'Hello');
-			assert.strictEqual(lb.get('no-ja1'), 'NoJa1');
-			assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
-			assert.strictEqual(lb.get('no-en1'), 'no-en1');
-			assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
-			assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
+		lb.setLang("ja");
+		assert.strictEqual(lb.get('hello'), 'こんにちわ');
+		assert.strictEqual(lb.get('no-ja1'), 'NoJa1');
+		assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
+		assert.strictEqual(lb.get('no-en1'), 'no-en1');
+		assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
+		assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
 
-			lb.setLang("ja");
-			assert.strictEqual(lb.get('hello'), 'こんにちわ');
-			assert.strictEqual(lb.get('no-ja1'), 'NoJa1');
-			assert.strictEqual(lb.get('no-ja2'), 'NoJa2');
-			assert.strictEqual(lb.get('no-en1'), 'no-en1');
-			assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
-			assert.strictEqual(lb.get('undefinedKey', 'default value'), 'default value');
+		lb.setLang("anylang");
+		assert.strictEqual(lb.get('goodmorning'), 'good morning in anylang');
+		assert.strictEqual(lb.get('hello'), 'hello in anylang');
 
-			lb.setLang("anylang");
-			assert.strictEqual(lb.get('goodmorning'), 'good morning in anylang');
-			assert.strictEqual(lb.get('hello'), 'hello in anylang');
+		// getList()
+		assert.strictEqual(lb.getList().hello.ja, 'こんにちわ');
+		assert.strictEqual(lb.getList().hello.en, 'Hello');
+	});
 
-			// getList()
-			assert.strictEqual(lb.getList().hello.ja, 'こんにちわ');
-			assert.strictEqual(lb.getList().hello.en, 'Hello');
-
-			done();
+	it("options", function() {
+		var lb = new LangBank(listCsv, {
+			"bind":{
+				"test1": "bind test 1",
+				"test2": "bind test 2"
+			}
 		});
 
+		lb.setLang("en");
+		assert.strictEqual(lb.get('hello'), 'Hello');
+
+		lb.setLang("ja");
+		assert.strictEqual(lb.get('hello'), 'こんにちわ');
+
+		assert.strictEqual(lb.getList().hello.ja, 'こんにちわ');
+		assert.strictEqual(lb.getList().hello.en, 'Hello');
+
+		// bind test
+		assert.strictEqual(lb.get('bind1'), 'test bind test 1');
+		assert.strictEqual(lb.get('bind1', {"test1": "local bind test 1"}), 'test local bind test 1');
+		assert.strictEqual(lb.get('bind1', {"test1": "local bind test 2"}, "test local template: {{ test1 }}"), 'test local bind test 2');
+		assert.strictEqual(lb.get('undefined', {"test1": "local bind test 3"}, "test local template: {{ test1 }}"), 'test local template: local bind test 3');
 	});
 
-	it("options", function(done) {
-		this.timeout(60*1000);
+	it("as CSV code", function() {
+		var lb = new LangBank(csvCode);
 
-		var lb = new LangBank(
-			listCsv,
-			{
-				"bind":{
-					"test1": "bind test 1",
-					"test2": "bind test 2"
-				}
-			},
-			function(){
+		lb.setLang("en");
+		assert.strictEqual(lb.get('helloworld'), 'Hello World');
 
-				lb.setLang("en");
-				assert.strictEqual(lb.get('hello'), 'Hello');
+		lb.setLang("ja");
+		assert.strictEqual(lb.get('helloworld'), 'こんにちわ世界');
 
-				lb.setLang("ja");
-				assert.strictEqual(lb.get('hello'), 'こんにちわ');
-
-				assert.strictEqual(lb.getList().hello.ja, 'こんにちわ');
-				assert.strictEqual(lb.getList().hello.en, 'Hello');
-
-				// bind test
-				assert.strictEqual(lb.get('bind1'), 'test bind test 1');
-				assert.strictEqual(lb.get('bind2'), 'ja');
-				assert.strictEqual(lb.get('bind3'), 'en');
-				assert.strictEqual(lb.get('bind4'), 'こんにちわ');
-
-				assert.strictEqual(lb.get('bind1', {"test1": "local bind test 1"}), 'test local bind test 1');
-				assert.strictEqual(lb.get('bind1', {"test1": "local bind test 2"}, "test local template: {{ test1 }}"), 'test local bind test 2');
-				assert.strictEqual(lb.get('undefined', {"test1": "local bind test 3"}, "test local template: {{ test1 }}"), 'test local template: local bind test 3');
-
-				done();
-			}
-		);
-
+		assert.strictEqual(lb.getList().helloworld.ja, 'こんにちわ世界');
+		assert.strictEqual(lb.getList().helloworld.en, 'Hello World');
 	});
 
-	it("as CSV code", function(done) {
-		this.timeout(60*1000);
-
-		var lb = new LangBank(
-			csvCode,
-			function(){
-
-				lb.setLang("en");
-				assert.strictEqual(lb.get('helloworld'), 'Hello World');
-
-				lb.setLang("ja");
-				assert.strictEqual(lb.get('helloworld'), 'こんにちわ世界');
-
-				assert.strictEqual(lb.getList().helloworld.ja, 'こんにちわ世界');
-				assert.strictEqual(lb.getList().helloworld.en, 'Hello World');
-
-				done();
-			}
-		);
-
-	});
-
-	it("null or undefined", function(done) {
-		this.timeout(60*1000);
-
-		var lb = new LangBank(
-			null,
-			function(){
-				assert.strictEqual(lb.get('helloworld', 'undefined'), 'undefined');
-				done();
-			}
-		);
-
+	it("null or undefined", function() {
+		var lb = new LangBank(null);
+		assert.strictEqual(lb.get('helloworld', 'undefined'), 'undefined');
 	});
 
 });
@@ -137,24 +100,24 @@ describe('Initialize', function() {
 		assert.strictEqual(lb.defaultLang, 'en');
 	});
 
-	it("コールバックは非同期で呼ばれる", function(done) {
-		var called = false;
-		var lb = new LangBank(listCsv, function(){
-			called = true;
-			assert.strictEqual(arguments.length, 0);
-			done();
+	it("コールバックは廃止した (第 3 引数は TypeError)", function() {
+		[function(){}, null, false].forEach(function(callback){
+			assert.throws(function(){
+				new LangBank(listCsv, {}, callback);
+			}, function(e){
+				return e instanceof TypeError && /callback was removed/.test(e.message);
+			});
 		});
-		assert.strictEqual(called, false);
-		assert.strictEqual(lb.get('hello'), 'Hello');
+		// 第 2 引数の関数 (v1 のコールバック) は、オプションの型の誤り
+		assert.throws(function(){
+			new LangBank(listCsv, function(){});
+		}, TypeError);
+		// undefined は省略と同じ
+		assert.strictEqual(new LangBank(listCsv, undefined, undefined).get('hello'), 'Hello');
 	});
 
-	it("options だけを渡せる (コールバックなし)", function() {
+	it("options だけを渡せる", function() {
 		var lb = new LangBank(listCsv, {"bind": {"test1": "A"}});
-		assert.strictEqual(lb.get('bind1'), 'test A');
-	});
-
-	it("第 3 引数のコールバックが null でもよい", function() {
-		var lb = new LangBank(listCsv, {"bind": {"test1": "A"}}, null);
 		assert.strictEqual(lb.get('bind1'), 'test A');
 	});
 
@@ -248,16 +211,6 @@ describe('Errors', function() {
 		}, 'FILE_NOT_FOUND');
 	});
 
-	it("コールバックを渡しても同期で throw する", function() {
-		var called = false;
-		assertLangBankError(function(){
-			new LangBank(__dirname+'/testdata/typo.csv', function(){ called = true; });
-		}, 'FILE_NOT_FOUND');
-		return new Promise(function(resolve){ setTimeout(resolve, 10); }).then(function(){
-			assert.strictEqual(called, false);
-		});
-	});
-
 	it("改行を含まない CSV 文字列はパスとして扱う", function() {
 		assertLangBankError(function(){
 			new LangBank('"","en"');
@@ -284,8 +237,12 @@ describe('Errors', function() {
 			[listCsv, undefined, 1],
 			[["", "en"], "row"],
 			[["", "en"], ["k", ["a", "b"]]],
-			[["", "en"], ["k", {"a": 1}]]
-		].forEach(function(src){
+			[["", "en"], ["k", {"a": 1}]],
+			[["", "en"], ["k", function(){}]]
+		].concat(
+			typeof(Symbol) === 'function' ? [[["", "en"], ["k", Symbol('s')]]] : [],
+			typeof(BigInt) === 'function' ? [[["", "en"], ["k", BigInt(1)]]] : []
+		).forEach(function(src){
 			assertLangBankError(function(){
 				new LangBank(src);
 			}, 'INVALID_SOURCE');
@@ -300,23 +257,43 @@ describe('Errors', function() {
 		}, 'INVALID_CSV');
 	});
 
-	it("CSV のパースエラーは CSV_PARSE_ERROR", function() {
-		assertLangBankError(function(){
-			new LangBank('"","en"'+"\n"+'"k","v');
-		}, 'CSV_PARSE_ERROR');
+	it("不正な CSV でもエラーにしない (PHP版と同じ規則で読む)", function() {
+		var lb = new LangBank('"","en"'+"\n"+'"k","v'+"\n"+'"k2","v2"');
+		assert.deepStrictEqual(lb.getList(), {"k": {"en": 'v\nk2"'}});
+		lb = new LangBank('"","en"'+"\n"+'"a","x"y'+"\n"+'"b",x"y'+"\n");
+		assert.strictEqual(lb.get('a'), 'xy');
+		assert.strictEqual(lb.get('b'), 'x"y');
 	});
 
-	it("Twig の構文エラーは TEMPLATE_ERROR", function() {
-		var lb = new LangBank(__dirname+'/testdata/escape.csv');
+	it("予約した構文は読み込み時に TEMPLATE_ERROR", function() {
 		assert.throws(function(){
-			lb.get('bad');
+			new LangBank('"","en","ja"'+"\n"+'"ok","OK",""'+"\n"+'"bad","OK","{% if x %}"'+"\n");
 		}, function(e){
 			assert.ok(e instanceof LangBank.LangBankError);
 			assert.strictEqual(e.code, 'TEMPLATE_ERROR');
-			assert.ok(e.message.indexOf('bad') >= 0);
-			assert.ok(e.cause);
+			assert.strictEqual(e.message, 'Unsupported syntax in the word of key "bad" (lang: ja): "{% if x %}". Only placeholders like {{ name }} are supported.');
 			return true;
 		});
+		var lb = new LangBank(listCsv);
+		assertLangBankError(function(){
+			lb.load([["", "en"], ["bad", "{{ a.b }}"]]);
+		}, 'TEMPLATE_ERROR');
+		assert.strictEqual(lb.has('bad'), false);
+	});
+
+	it("予約した構文のデフォルト値は get() で TEMPLATE_ERROR", function() {
+		var lb = new LangBank(listCsv);
+		lb.setLang('ja');
+		assert.throws(function(){
+			lb.get('nokey', {"name": "x"}, '{# comment #}');
+		}, function(e){
+			assert.ok(e instanceof LangBank.LangBankError);
+			assert.strictEqual(e.code, 'TEMPLATE_ERROR');
+			assert.strictEqual(e.message, 'Unsupported syntax in the default value of key "nokey" (lang: ja): "{# comment #}". Only placeholders like {{ name }} are supported.');
+			return true;
+		});
+		// 訳文があれば、デフォルト値は使わない (調べない)
+		assert.strictEqual(lb.get('hello', null, '{% x %}'), 'こんにちわ');
 	});
 
 });
@@ -331,11 +308,12 @@ describe('get()', function() {
 		assert.deepStrictEqual(Object.keys(options.bind), ['test1']);
 	});
 
-	it("切り離して呼んでも _ENV が使える", function() {
-		var lb = new LangBank(listCsv);
+	it("切り離して呼べる", function() {
+		var lb = new LangBank(listCsv, {"bind": {"test1": "A"}});
 		lb.setLang('ja');
 		var get = lb.get;
-		assert.strictEqual(get('bind2'), 'ja');
+		assert.strictEqual(get('hello'), 'こんにちわ');
+		assert.strictEqual(get('bind1'), 'test A');
 	});
 
 	it("文字列以外のデフォルト値は指定なしとして扱う", function() {
@@ -374,36 +352,59 @@ describe('get()', function() {
 		assert.strictEqual(lb.get('undefinedKey'), '');
 	});
 
-	it("エラーの後も描画中の状態が残らない", function() {
-		var lb = new LangBank(__dirname+'/testdata/env.csv', {"bind": {"name": "Global"}});
-		assert.throws(function(){
-			lb.get('loop_a', {"name": "Tom"});
-		}, function(e){
-			return e.code === 'CIRCULAR_REFERENCE';
-		});
-		assert.strictEqual(lb.get('welcome'), 'Hello, Global Welcome!');
-		assert.throws(function(){
-			lb.get('outer', {"name": "Tom"});
-		}, function(e){
-			return e.code === 'TEMPLATE_ERROR';
-		});
-		assert.strictEqual(lb.get('twice'), 'Hello, Global / Hello, Global');
-	});
-
-	it("_ENV からファイルを読み込めない", function() {
-		var lb = new LangBank('"","en"\n"x","{{ _ENV.load(path) }}"\n');
-		try{
-			lb.get('x', {"path": __dirname+'/testdata/merge_b.csv'});
-		}catch(e){}
-		assert.deepStrictEqual(lb.getLangList(), ['en']);
-		assert.strictEqual(lb.has('onlyb'), false);
-	});
-
-	it("onMissing の戻り値は Twig で評価しない", function() {
+	it("onMissing の戻り値は置き換えない", function() {
 		var lb = new LangBank(listCsv, {
-			"onMissing": function(key){ return '{{ '+key+' }}'; }
+			"onMissing": function(key){ return '{{ '+key+' }} {% x %}'; }
 		});
-		assert.strictEqual(lb.get('undefinedKey'), '{{ undefinedKey }}');
+		assert.strictEqual(lb.get('undefinedKey', {"undefinedKey": "X"}), '{{ undefinedKey }} {% x %}');
+	});
+
+	it("onMissing が投げた例外は、そのまま投げる", function() {
+		var boom = new Error('boom');
+		var lb = new LangBank(listCsv, {"onMissing": function(){ throw boom; }});
+		assert.throws(function(){ lb.get('nokey'); }, function(e){ return e === boom; });
+	});
+
+	it("バインドデータは、自身の列挙可能なプロパティだけを探す", function() {
+		var lb = new LangBank('"","en"'+"\n"+'"k","[{{ x }}][{{ length }}][{{ constructor }}][{{ toString }}]"'+"\n");
+		assert.strictEqual(lb.get('k', Object.create({"x": "inherited"})), '[][][][]');
+		assert.strictEqual(lb.get('k', ['a', 'b']), '[][][][]');
+		var data = {};
+		Object.defineProperty(data, 'x', {"value": "hidden", "enumerable": false});
+		assert.strictEqual(lb.get('k', data), '[][][][]');
+		assert.strictEqual(lb.get('k', {"x": "own", "length": 2}), '[own][2][][]');
+		assert.strictEqual(lb.get('k', {get x(){ return 'getter'; }}), '[getter][][][]');
+
+		// options.bind も同じ (自身の列挙可能なプロパティだけをコピーする)
+		lb = new LangBank('"","en"'+"\n"+'"k","[{{ x }}][{{ y }}]"'+"\n", {"bind": Object.assign(Object.create({"x": "inherited"}), {"y": "own"})});
+		assert.strictEqual(lb.get('k'), '[][own]');
+	});
+
+	it("値の型が対応していなければ TEMPLATE_ERROR", function() {
+		var lb = new LangBank('"","en"'+"\n"+'"k","[{{ x }}]"'+"\n");
+		[{}, [], function(){}].concat(typeof(Symbol) === 'function' ? [Symbol('s')] : []).forEach(function(value){
+			assert.throws(function(){
+				lb.get('k', {"x": value});
+			}, function(e){
+				assert.ok(e instanceof LangBank.LangBankError);
+				assert.strictEqual(e.code, 'TEMPLATE_ERROR');
+				assert.ok(/Unsupported type of the value "x"/.test(e.message), e.message);
+				return true;
+			});
+		});
+		// 数値は String() と同じ
+		assert.strictEqual(lb.get('k', {"x": 0.1 + 0.2}), '[0.30000000000000004]');
+		assert.strictEqual(lb.get('k', {"x": undefined}), '[]');
+		// options.bind の値は、使うときに調べる
+		lb = new LangBank('"","en"'+"\n"+'"k","[{{ x }}]"'+"\n"+'"other","[{{ y }}]"'+"\n", {"bind": {"x": {}}});
+		assert.strictEqual(lb.get('other'), '[]');
+		assertLangBankError(function(){ lb.get('k'); }, 'TEMPLATE_ERROR');
+	});
+
+	it("getList() と has() は訳文をそのまま扱う", function() {
+		var lb = new LangBank(__dirname+'/testdata/placeholders.csv');
+		assert.strictEqual(lb.getList().greet.en, 'Hi {{ name }}');
+		assert.strictEqual(lb.has('greet'), true);
 	});
 
 });
@@ -484,9 +485,11 @@ describe('Interface', function() {
 			{"onmissing": function(){}},
 			{"bind": "x"},
 			{"bind": []},
-			{"autoescape": "xml"},
-			{"autoescape": 1},
-			{"twig": "false"},
+			{"template": "false"},
+			{"template": 0},
+			{"twig": false},
+			{"autoescape": "html"},
+			{"autoescape": false},
 			{"onMissing": "f"},
 			{"fallback": []},
 			{"fallback": {"ja": 1}},
@@ -521,29 +524,24 @@ describe('Interface', function() {
 			assert.strictEqual(new LangBank(listCsv, options).get('hello'), 'Hello');
 		});
 
-		// テンプレートの中では TEMPLATE_ERROR に包まれる
-		lb = new LangBank('"","en"'+"\n"+'"x","{{ _ENV.has(\'hello\', \'x\') }}"'+"\n");
+		// 関数も TypeError (v1 のコールバック)
 		assert.throws(function(){
-			lb.get('x');
+			new LangBank(listCsv, function(){});
 		}, function(e){
-			return e instanceof LangBank.LangBankError && e.code === 'TEMPLATE_ERROR' && e.cause instanceof TypeError;
+			return e instanceof TypeError && !(e instanceof LangBank.LangBankError);
 		});
-
-		// 関数は (非推奨の) コールバックとして扱う
-		lb = new LangBank(listCsv, function(){});
-		assert.strictEqual(lb.get('hello'), 'Hello');
 	});
 
 	it("null や undefined のオプションは指定なしとして扱う", function() {
-		var lb = new LangBank(listCsv, {"bind": null, "autoescape": null, "twig": undefined, "onMissing": null, "fallback": null});
+		var lb = new LangBank(listCsv, {"bind": null, "template": undefined, "onMissing": null, "fallback": null});
 		assert.strictEqual(lb.get('undefinedKey'), 'undefinedKey');
-		lb = new LangBank(listCsv, null, null);
+		lb = new LangBank(listCsv, null);
 		assert.strictEqual(lb.get('hello'), 'Hello');
 	});
 
-	it("autoescape: true は html", function() {
-		var lb = new LangBank(__dirname+'/testdata/escape.csv', {"autoescape": true});
-		assert.strictEqual(lb.get('greet', {"name": "<b>"}), 'Hi &lt;b&gt;');
+	it("template: true は既定と同じ", function() {
+		var lb = new LangBank(__dirname+'/testdata/placeholders.csv', {"template": true});
+		assert.strictEqual(lb.get('greet', {"name": "Tom"}), 'Hi Tom');
 	});
 
 	it("fallback の値には文字列も書ける", function() {
@@ -557,7 +555,7 @@ describe('Interface', function() {
 		var lb = new LangBank([listCsv, __dirname+'/testdata/regional.csv'], options);
 		options.bind.test1 = 'B';
 		options.fallback['zh-HK'].push('pt');
-		options.twig = false;
+		options.template = false;
 		assert.strictEqual(lb.get('bind1'), 'test A');
 		lb.setLang('zh-HK');
 		assert.strictEqual(lb.get('color'), '顏色');
@@ -591,6 +589,14 @@ describe('Interface', function() {
 		assert.strictEqual(lb.get('k'), '[]');
 		assert.strictEqual(lb.get('k', JSON.parse('{"__proto__": {"x": "inherited"}}')), '[]');
 		assert.strictEqual(lb.get('k', {"x": "X"}), '[X]');
+
+		// __proto__ という名前の変数
+		lb = new LangBank('"","en"'+"\n"+'"k","[{{ __proto__ }}]"', {
+			"bind": JSON.parse('{"__proto__": "global"}')
+		});
+		assert.strictEqual(lb.get('k'), '[global]');
+		assert.strictEqual(lb.get('k', JSON.parse('{"__proto__": "local"}')), '[local]');
+		assert.strictEqual(new LangBank('"","en"'+"\n"+'"k","[{{ __proto__ }}]"').get('k', {}), '[]');
 	});
 
 	it("読み込み元のリストの中の空の要素を読み飛ばす", function() {
@@ -622,22 +628,16 @@ describe('Interface', function() {
 		});
 	});
 
-	it("_ENV.get() が返した onMissing の戻り値はエスケープする", function() {
-		var lb = new LangBank(__dirname+'/testdata/escape.csv', {
-			"autoescape": "html",
-			"onMissing": function(key){ return '<i>'+key+'</i>'; }
-		});
-		assert.strictEqual(lb.get('dynamic', {"name": "x"}), '[&lt;i&gt;x&lt;/i&gt;]');
-		assert.strictEqual(lb.get('nope'), '<i>nope</i>');
-	});
-
 	it("エラーコードの定数", function() {
 		[
 			'FILE_NOT_FOUND', 'FILE_READ_ERROR', 'INVALID_SOURCE', 'INVALID_CSV',
-			'CSV_PARSE_ERROR', 'TEMPLATE_ERROR', 'CIRCULAR_REFERENCE', 'INVALID_OPTION'
+			'TEMPLATE_ERROR', 'INVALID_OPTION'
 		].forEach(function(code){
 			assert.strictEqual(LangBank.LangBankError[code], code);
 		});
+		// v2 で廃止したコード
+		assert.strictEqual(LangBank.LangBankError.CSV_PARSE_ERROR, undefined);
+		assert.strictEqual(LangBank.LangBankError.CIRCULAR_REFERENCE, undefined);
 	});
 
 	it("withLang() は言語を固定したビューを返す", function() {
@@ -667,27 +667,25 @@ describe('Interface', function() {
 		assert.strictEqual(lb.withLang().lang, null);
 		assert.strictEqual(lb.withLang().get('hello'), 'Hello');
 		assert.strictEqual(lb.withLang(123).getLang(), '123');
-		assert.strictEqual(new LangBank(__dirname+'/testdata/env.csv').withLang(null).get('nokey', null, '{{ _ENV.lang }}/{{ _ENV.defaultLang }}/'), '/en/');
 	});
 
-	it("withLang() のビューから描画すると _ENV はビューの言語", function() {
-		var lb = new LangBank(__dirname+'/testdata/env.csv');
-		assert.strictEqual(lb.withLang('ja').get('env'), 'ja/en/ja/en/yes');
-		assert.strictEqual(lb.get('env'), 'en/en/en/en/yes');
-		assert.strictEqual(lb.withLang('ja').get('welcome', {"name": "Tom"}), 'Hello, Tom Welcome!');
+	it("withLang() のビューでもプレースホルダーを置き換える", function() {
+		var lb = new LangBank(__dirname+'/testdata/placeholders.csv', {"bind": {"name": "Global"}});
+		assert.strictEqual(lb.withLang('ja').get('ja_only'), '日本語 Global');
+		assert.strictEqual(lb.withLang('ja').get('ja_only', {"name": "太郎"}), '日本語 太郎');
+		assert.strictEqual(lb.withLang('ja').get('nokey', {"name": "x"}, '[{{ name }}]'), '[x]');
+		assertLangBankError(function(){
+			lb.withLang('ja').get('nokey', null, '{% x %}');
+		}, 'TEMPLATE_ERROR');
 	});
 
-	it("withLang() のビューでも onMissing に言語を渡し、循環参照を検出する", function() {
+	it("withLang() のビューでも onMissing に言語を渡す", function() {
 		var log = [];
-		var lb = new LangBank(__dirname+'/testdata/env.csv', {
+		var lb = new LangBank(listCsv, {
 			"onMissing": function(key, lang){ log.push(key+':'+lang); }
 		});
 		assert.strictEqual(lb.withLang('fr').get('nope'), 'nope');
 		assert.deepStrictEqual(log, ['nope:fr']);
-		assertLangBankError(function(){
-			lb.withLang('ja').get('loop_a');
-		}, 'CIRCULAR_REFERENCE');
-		assert.strictEqual(lb.withLang('ja').get('welcome'), 'Hello,  Welcome!');
 	});
 
 	it("setLang() は null/undefined を null に、それ以外を文字列にする", function() {
@@ -739,7 +737,7 @@ describe('Interface', function() {
 		assert.strictEqual(lb.resolveLang('zh-TW'), 'zh-Hant');
 	});
 
-	it("ビューと _ENV の resolveLang() と getLangList()", function() {
+	it("ビューの resolveLang() と getLangList()", function() {
 		var lb = new LangBank(__dirname+'/testdata/regional.csv');
 		lb.setLang('ja');
 		var view = lb.withLang('en-GB');
@@ -754,10 +752,6 @@ describe('Interface', function() {
 		view.getLangList().push('xx');
 		lb.load('"","fr"'+"\n"+'"hello","Bonjour"');
 		assert.deepStrictEqual(view.getLangList(), ['en', 'en-US', 'ja', 'zh-Hant', 'pt', 'fr']);
-
-		var tpl = '{{ _ENV.resolveLang() }}/{{ _ENV.resolveLang("pt_BR") }}/{{ _ENV.resolveLang(null) is null ? "null" : "x" }}/{{ _ENV.getLangList()|join(",") }}';
-		assert.strictEqual(view.get('nokey', null, tpl), 'en/pt/null/en,en-US,ja,zh-Hant,pt,fr');
-		assert.strictEqual(lb.get('nokey', null, tpl), 'ja/pt/null/en,en-US,ja,zh-Hant,pt,fr');
 	});
 
 	it("setLang() を呼んだ後の load() は現在の言語を変えない", function() {
@@ -785,7 +779,7 @@ describe('Interface', function() {
 			[__dirname+'/testdata/regional.csv', [["key"], ["k", "v"]]],
 			[__dirname+'/testdata/regional.csv', [["", "en"], "x"]],
 			[__dirname+'/testdata/regional.csv', [["", "en"], [{}]]],
-			[__dirname+'/testdata/regional.csv', '"","en"\n"k","\"broken'],
+			[__dirname+'/testdata/regional.csv', '"","en"\n"k","{% broken %}"'],
 			[__dirname+'/testdata/regional.csv', 1]
 		].forEach(function(src){
 			assert.throws(function(){
@@ -847,7 +841,7 @@ describe('Interface', function() {
 	});
 
 	it("キーは文字列か数値に限る", function() {
-		var lb = new LangBank('"","en"\n"123","num"\n"t_get","{{ _ENV.get(nokey) }}"\n"t_has","{{ _ENV.has(nokey) }}"\n"t_num","{{ _ENV.get(123) }}"\n');
+		var lb = new LangBank('"","en"\n"123","num"\n');
 		var view = lb.withLang('en');
 		[undefined, null, true, {}, ['a']].forEach(function(key){
 			assert.throws(function(){ lb.get(key); }, TypeError);
@@ -859,36 +853,6 @@ describe('Interface', function() {
 		assert.strictEqual(lb.get(123), 'num');
 		assert.strictEqual(lb.has(123), true);
 		assert.strictEqual(lb.get(''), '');
-		assert.strictEqual(lb.get('t_num'), 'num');
-
-		// テンプレートの中の型エラーは TEMPLATE_ERROR になる
-		['t_get', 't_has'].forEach(function(key){
-			assert.throws(function(){ lb.get(key); }, function(e){
-				assert.ok(e instanceof LangBank.LangBankError);
-				assert.strictEqual(e.code, 'TEMPLATE_ERROR');
-				assert.ok(/Key must be a string or a number/.test(e.message));
-				return true;
-			});
-		});
-	});
-
-	it("テンプレートの中のエラーの扱い", function() {
-		// 未定義の変数は default('') で空文字のキーにできる
-		var lb = new LangBank('"","en"\n"t","[{{ _ENV.get(nokey|default(\'\')) }}]"\n');
-		assert.strictEqual(lb.get('t'), '[]');
-
-		// onMissing が投げた例外は、外側のキーの TEMPLATE_ERROR に包む
-		var boom = new Error('boom');
-		lb = new LangBank('"","en"\n"outer","{{ _ENV.get(\'inner\') }}"\n', {"onMissing": function(){ throw boom; }});
-		assert.throws(function(){ lb.get('outer'); }, function(e){
-			assert.ok(e instanceof LangBank.LangBankError);
-			assert.strictEqual(e.code, 'TEMPLATE_ERROR');
-			assert.ok(/key "outer"/.test(e.message));
-			assert.strictEqual(e.cause, boom);
-			return true;
-		});
-		// テンプレートの外では、そのまま投げる
-		assert.throws(function(){ lb.get('inner'); }, function(e){ return e === boom; });
 	});
 
 	it("getList() は、すべてのキーにすべての言語を持たせる", function() {

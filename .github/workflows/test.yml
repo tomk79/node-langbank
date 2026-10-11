@@ -42,5 +42,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install --no-audit --no-fund
+      # 開発用の esbuild と playwright は Node.js 18 以降が必要なので、インストールスクリプトを実行しない
+      # (ブラウザのテストは browser ジョブで実行する)
+      - run: npm install --no-audit --no-fund --ignore-scripts
       - run: npm test
+
+  browser:
+    name: Browsers (esbuild, Chromium, WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium-headless-shell webkit
+      - run: npm run test:browser
+        env:
+          LANGBANK_REQUIRE_BROWSERS: '1'

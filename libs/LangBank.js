@@ -1,26 +1,8 @@
 /**
  * langbank.js
  */
-var fs = null;
-try{
-	fs = require('fs');
-}catch(e){
-	// ブラウザなど、fs が使えない環境
-}
-var Twig = null;
-try{
-	Twig = require('twig');
-}catch(e){
-	// Twig を読み込めない環境では、テンプレートを評価せずに返す
-}
-var TwigMarkup = null;
-if( Twig && typeof(Twig.extend) === 'function' ){
-	// テンプレートで安全な文字列として扱われる Twig.Markup は、extend() からしか取り出せない
-	Twig.extend(function(TwigCore){
-		TwigMarkup = TwigCore.Markup;
-	});
-}
-var csvParse = require('csv/sync').parse;
+var parseCsv = require('./parseCsv.js');
+var readTextFile = require('./readTextFile.js'); // ブラウザ向けのバンドルでは readTextFile.browser.js
 
 /** エラーコード */
 var ERROR_CODES = [
@@ -28,14 +10,9 @@ var ERROR_CODES = [
 	'FILE_READ_ERROR',
 	'INVALID_SOURCE',
 	'INVALID_CSV',
-	'CSV_PARSE_ERROR',
 	'TEMPLATE_ERROR',
-	'CIRCULAR_REFERENCE',
 	'INVALID_OPTION'
 ];
-
-/** options.autoescape に指定できるエスケープの戦略 */
-var AUTOESCAPE_STRATEGIES = ['html', 'js', 'css', 'url', 'html_attr'];
 
 /**
  * LangBank のエラー
@@ -113,21 +90,6 @@ function is2dArray(value){
 }
 
 /**
- * CSV文字列をパースする
- */
-function parseCsv(src){
-	try{
-		return csvParse(src, {
-			'bom': true,
-			'relax_column_count': true,
-			'skip_empty_lines': true
-		});
-	}catch(e){
-		throw new LangBankError('CSV_PARSE_ERROR', 'Failed to parse CSV: '+e.message, e);
-	}
-}
-
-/**
  * 文字列を、CSV文字列またはファイルパスとして読み込む
  */
 function readCsvString(src){
@@ -137,27 +99,76 @@ function readCsvString(src){
 	}
 
 	// 改行を含まない文字列はファイルパスとして扱う
-	if( !fs || typeof(fs.existsSync) !== 'function' ){
+	var result = readTextFile(src);
+	if( result.error === 'NO_FILE_SYSTEM' ){
 		throw new LangBankError('FILE_NOT_FOUND', 'File not found (file system is not available): '+src);
 	}
-	if( !fs.existsSync(src) ){
+	if( result.error === 'FILE_NOT_FOUND' ){
 		throw new LangBankError('FILE_NOT_FOUND', 'File not found: '+src);
 	}
-	var isFile, content;
-	try{
-		isFile = fs.statSync(src).isFile();
-	}catch(e){
-		throw new LangBankError('FILE_READ_ERROR', 'Failed to read file: '+src, e);
+	if( result.error ){
+		throw new LangBankError('FILE_READ_ERROR', 'Failed to read file: '+src, result.cause);
 	}
-	if( !isFile ){
-		throw new LangBankError('FILE_NOT_FOUND', 'File not found: '+src);
+	return parseCsv(result.content);
+}
+
+/**
+ * プレースホルダー ({{ name }}) か、予約した構文 ({{, {%, {#) にマッチする正規表現
+ *
+ * 予約した構文にマッチしたときは、1 番目のグループが undefined になる。
+ */
+function placeholderPattern(){
+	return /\{\{[ \t\r\n]*([A-Za-z_][A-Za-z0-9_]*)[ \t\r\n]*\}\}|\{[{%#]/g;
+}
+
+/**
+ * 予約した構文のうち、正しいプレースホルダーにならないものの位置を返す (なければ -1)
+ */
+function findReservedSyntax(template){
+	if( template.indexOf('{') < 0 ){
+		return -1;
 	}
-	try{
-		content = fs.readFileSync(src).toString();
-	}catch(e){
-		throw new LangBankError('FILE_READ_ERROR', 'Failed to read file: '+src, e);
+	var pattern = placeholderPattern();
+	var matched;
+	while( (matched = pattern.exec(template)) !== null ){
+		if( !matched[1] ){
+			return matched.index;
+		}
 	}
-	return parseCsv(content);
+	return -1;
+}
+
+/**
+ * 訳文やデフォルト値のエラーメッセージ用に、場所を説明する
+ */
+function describeTemplate(isDefault, key, lang){
+	return (isDefault ? 'the default value' : 'the word')+' of key "'+key+'" (lang: '+lang+')';
+}
+
+/**
+ * 予約した構文のエラー
+ */
+function reservedSyntaxError(template, index, where){
+	return new LangBankError('TEMPLATE_ERROR', 'Unsupported syntax in '+where+': "'+template.slice(index, index + 20)+'". Only placeholders like {{ name }} are supported.');
+}
+
+/**
+ * プレースホルダーに差し込む値を文字列にする
+ */
+function toPlaceholderValue(value, name, where){
+	if( value === null || value === undefined ){
+		return '';
+	}
+	if( typeof(value) === 'string' ){
+		return value;
+	}
+	if( typeof(value) === 'number' ){
+		return String(value);
+	}
+	if( typeof(value) === 'boolean' ){
+		return value ? '1' : '';
+	}
+	throw new LangBankError('TEMPLATE_ERROR', 'Unsupported type of the value "'+name+'" ('+describeType(value)+') in '+where+'.');
 }
 
 /**
@@ -195,27 +206,16 @@ var OPTION_NORMALIZERS = {
 		if( !isPlainObject(value) ){
 			throw new LangBankError('INVALID_OPTION', 'Option "bind" must be an object.');
 		}
+		// 自身の列挙可能なプロパティだけを、浅くコピーする
 		var rtn = {};
-		for( var key in value ){
+		Object.keys(value).forEach(function(key){
 			setProp(rtn, key, value[key]);
-		}
+		});
 		return rtn;
 	},
-	'autoescape': function(value){
-		if( value === false ){
-			return false;
-		}
-		if( value === true ){
-			return 'html';
-		}
-		if( AUTOESCAPE_STRATEGIES.indexOf(value) < 0 ){
-			throw new LangBankError('INVALID_OPTION', 'Option "autoescape" must be false, true, or one of: '+AUTOESCAPE_STRATEGIES.join(', ')+'.');
-		}
-		return value;
-	},
-	'twig': function(value){
+	'template': function(value){
 		if( typeof(value) !== 'boolean' ){
-			throw new LangBankError('INVALID_OPTION', 'Option "twig" must be a boolean.');
+			throw new LangBankError('INVALID_OPTION', 'Option "template" must be a boolean.');
 		}
 		return value;
 	},
@@ -277,11 +277,6 @@ function normalizeHasOptions(options){
 		throw new TypeError('Options of has() must be an object, '+describeType(options)+' given.');
 	}
 	Object.keys(options).forEach(function(name){
-		if( name === '_keys' && Array.isArray(options[name]) ){
-			// Twig.js のハッシュリテラル ({'exact': true}) が持つ内部プロパティ。
-			// テンプレートの中から _ENV.has() にオプションを渡せるように無視する (テンプレートの外から渡しても同じ)
-			return;
-		}
 		if( name !== 'exact' ){
 			throw new LangBankError('INVALID_OPTION', 'Unknown option of has(): '+name);
 		}
@@ -336,15 +331,15 @@ function setProp(obj, key, value){
 /**
  * LangBank
  */
-var LangBank = function(src, options, callback){
+var LangBank = function(src, options){
 	if( !(this instanceof LangBank) ){
 		throw new TypeError("Class constructor LangBank cannot be invoked without 'new'");
 	}
-	var _this = this;
-	if( typeof(options) === 'function' ){
-		callback = options;
-		options = null;
+	if( arguments.length > 2 && arguments[2] !== undefined ){
+		// v1 のコールバック (v2 で廃止)
+		throw new TypeError('LangBank does not take the 3rd argument. The callback was removed in v2: the dictionary is loaded synchronously.');
 	}
+	var _this = this;
 	this.options = normalizeOptions(options);
 	this.pathCsv = src;
 
@@ -354,7 +349,6 @@ var LangBank = function(src, options, callback){
 
 	var langList = [];
 	var langMap = Object.create(null); // 正規化した言語コード => 列名
-	var renderStack = []; // 描画中の get() の {key, lang, bind, error}
 	var langIsSet = false; // setLang() が呼ばれたか
 
 	/**
@@ -363,6 +357,7 @@ var LangBank = function(src, options, callback){
 	 * 辞書は変更しない。空のCSVなら null、そうでなければ {rows, header} を返す。
 	 * rows は、セルを一度だけ読んで文字列にしたコピー (マージの途中で入力を読み直さない)。
 	 * header は、列のインデックス => 言語名 (言語の列だけ)。
+	 * 訳文に予約した構文があれば、TEMPLATE_ERROR を投げる。
 	 */
 	function prepareCsv(csvAry){
 		var rows = [];
@@ -376,7 +371,7 @@ var LangBank = function(src, options, callback){
 			var cells = [];
 			for( var i = 0; i < row.length; i ++ ){
 				var cell = row[i];
-				if( cell !== null && cell !== undefined && typeof(cell) === 'object' || typeof(cell) === 'function' ){
+				if( cell !== null && cell !== undefined && typeof(cell) !== 'string' && typeof(cell) !== 'number' && typeof(cell) !== 'boolean' ){
 					throw new LangBankError('INVALID_SOURCE', 'Each cell of CSV array must be a scalar value.');
 				}
 				cells.push(toStr(cell));
@@ -397,6 +392,22 @@ var LangBank = function(src, options, callback){
 		});
 		if( !header.some(function(lang){ return lang !== undefined; }) ){
 			throw new LangBankError('INVALID_CSV', 'CSV header has no language columns.');
+		}
+
+		if( _this.options.template !== false ){
+			// 訳文の予約した構文は、表示する前に (読み込み時に) 見つける
+			rows.slice(1).forEach(function(row){
+				if( row[0] === '' ){
+					return;
+				}
+				header.forEach(function(lang, idx){
+					var cell = (idx < row.length) ? row[idx] : '';
+					var index = findReservedSyntax(cell);
+					if( index >= 0 ){
+						throw reservedSyntaxError(cell, index, describeTemplate(false, row[0], lang));
+					}
+				});
+			});
 		}
 		return {'rows': rows, 'header': header};
 	}
@@ -526,93 +537,52 @@ var LangBank = function(src, options, callback){
 	}
 
 	/**
-	 * Twig テンプレートを評価する
+	 * プレースホルダー ({{ name }}) を、バインドデータの値で置き換える
+	 *
+	 * 1 回の走査で置き換え、差し込んだ値はもう一度処理しない。
+	 * バインドデータは、get() のデータ > options.bind の順で探す (自身の列挙可能なプロパティだけ)。
 	 */
-	function render(template, bindData, key, lang){
-		if( _this.options.twig === false || !Twig || !/\{[{%#]/.test(template) ){
+	function render(template, bindData, isDefault, key, lang){
+		if( _this.options.template === false || template.indexOf('{') < 0 ){
 			return template;
 		}
-
-		// バインドデータは options.bind < 外側の get() のデータ < この get() のデータ の順で上書きする
-		var bind = {};
-		var parentBind = renderStack.length ? renderStack[renderStack.length - 1].bind : (_this.options.bind || {});
-		for( var parentKey in parentBind ){
-			setProp(bind, parentKey, parentBind[parentKey]);
-		}
-		if( bindData && typeof(bindData) === 'object' ){
-			for( var bindDataKey in bindData ){
-				setProp(bind, bindDataKey, bindData[bindDataKey]);
+		var bind = _this.options.bind;
+		var hasBindData = bindData !== null && typeof(bindData) === 'object';
+		return template.replace(placeholderPattern(), function(matched, name, offset){
+			if( !name ){
+				throw reservedSyntaxError(template, offset, describeTemplate(isDefault, key, lang));
 			}
-		}
-		var data = {};
-		for( var dataKey in bind ){
-			setProp(data, dataKey, bind[dataKey]);
-		}
-		setProp(data, '_ENV', createView(lang, true));
-
-		var frame = {'key': key, 'lang': lang, 'bind': bind, 'error': null};
-		renderStack.push(frame);
-		try{
-			return Twig.twig({
-				'data': template,
-				'autoescape': _this.options.autoescape || false,
-				'rethrow': true
-			}).render(data);
-		}catch(e){
-			if( frame.error ){
-				// 入れ子の get() で起きたエラーは、包み直さずにそのまま投げる
-				throw frame.error;
+			var value;
+			if( hasBindData && Object.prototype.propertyIsEnumerable.call(bindData, name) ){
+				value = bindData[name];
+			}else if( bind && Object.prototype.hasOwnProperty.call(bind, name) ){
+				value = bind[name];
 			}
-			var message = (e && (e.message || e.type)) || String(e);
-			throw new LangBankError('TEMPLATE_ERROR', 'Failed to render template of key "'+key+'" (lang: '+lang+'): '+message, e);
-		}finally{
-			renderStack.pop();
-		}
+			return toPlaceholderValue(value, name, describeTemplate(isDefault, key, lang));
+		});
 	}
 
 	/**
 	 * 指定した言語で get() する
-	 *
-	 * 戻り値は {text, trusted}。trusted は、訳文かデフォルト値から作った文字列なら true。
-	 * (キーそのものや onMissing の戻り値は、テンプレートの中で安全な文字列として扱わない)
 	 */
 	function getFor(lang, args){
 		var key = toKey(args[0]);
 		var parsed = parseGetArgs(args);
-		try{
-			return getWord(key, parsed.bindData, parsed.defaultValue, lang);
-		}catch(e){
-			if( e instanceof LangBankError && renderStack.length && !renderStack[renderStack.length - 1].error ){
-				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
-				renderStack[renderStack.length - 1].error = e;
-			}
-			throw e;
-		}
-	}
-
-	/**
-	 * get() の本体
-	 */
-	function getWord(key, bindData, defaultValue, lang){
-		var path = renderStack.map(function(frame){ return frame.key; });
-		if( path.indexOf(key) >= 0 ){
-			throw new LangBankError('CIRCULAR_REFERENCE', 'Circular reference: '+path.slice(path.indexOf(key)).concat([key]).join(' -> '));
-		}
 
 		var value = findValue(key, lang, true);
 		if( value !== null ){
-			return {'text': render(value, bindData, key, lang), 'trusted': true};
+			return render(value, parsed.bindData, false, key, lang);
 		}
-		if( typeof(defaultValue) === 'string' ){
-			return {'text': render(defaultValue, bindData, key, lang), 'trusted': true};
+		if( typeof(parsed.defaultValue) === 'string' ){
+			return render(parsed.defaultValue, parsed.bindData, true, key, lang);
 		}
 		if( _this.options.onMissing ){
 			var missing = _this.options.onMissing(key, lang);
 			if( typeof(missing) === 'string' ){
-				return {'text': missing, 'trusted': false};
+				return missing;
 			}
 		}
-		return {'text': key, 'trusted': false};
+		return key;
 	}
 
 	/**
@@ -624,22 +594,12 @@ var LangBank = function(src, options, callback){
 
 	/**
 	 * 言語を固定した、読み取り専用のビュー
-	 *
-	 * forTemplate が true なら、テンプレートに _ENV として渡す。
-	 * このとき autoescape が有効なら、訳文やデフォルト値から作った get() の結果を安全な文字列 (Twig.Markup) で返し、
-	 * 二重にエスケープされないようにする。キーそのものや onMissing の戻り値は、外側のテンプレートでエスケープさせる。
 	 */
-	function createView(lang, forTemplate){
-		return Object.freeze(Object.create(forTemplate ? null : Object.prototype, {
+	function createView(lang){
+		return Object.freeze(Object.create(Object.prototype, {
 			'lang': {'enumerable': true, 'value': lang},
 			'defaultLang': {'enumerable': true, 'get': function(){ return _this.defaultLang; }},
-			'get': {'enumerable': true, 'value': function(){
-				var result = getFor(lang, arguments);
-				if( forTemplate && result.trusted && TwigMarkup && _this.options.autoescape ){
-					return TwigMarkup(result.text);
-				}
-				return result.text;
-			}},
+			'get': {'enumerable': true, 'value': function(){ return getFor(lang, arguments); }},
 			'has': {'enumerable': true, 'value': function(key, options){ return hasFor(lang, key, options); }},
 			'resolveLang': {'enumerable': true, 'value': function(l){ return resolveLangFor(l === undefined ? lang : l); }},
 			'getLang': {'enumerable': true, 'value': function(){ return lang; }},
@@ -689,7 +649,7 @@ var LangBank = function(src, options, callback){
 	 * get word by key
 	 */
 	this.get = function(){
-		return getFor(_this.lang, arguments).text;
+		return getFor(_this.lang, arguments);
 	}
 
 	/**
@@ -703,7 +663,7 @@ var LangBank = function(src, options, callback){
 	 * 言語を固定したビューを返す
 	 */
 	this.withLang = function(lang){
-		return createView((lang === null || lang === undefined) ? null : toStr(lang), false);
+		return createView((lang === null || lang === undefined) ? null : toStr(lang));
 	}
 
 	/**
@@ -736,12 +696,6 @@ var LangBank = function(src, options, callback){
 	}
 
 	this.load(src);
-
-	if( typeof(callback) === 'function' ){
-		setTimeout(function(){
-			callback();
-		}, 0);
-	}
 }
 
 LangBank.LangBankError = LangBankError;

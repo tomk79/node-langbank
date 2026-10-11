@@ -3,6 +3,7 @@
 		<testsuite name="default">
 			<file>./tests/mainTest.php</file>
 			<file>./tests/sharedCasesTest.php</file>
+			<file>./tests/csvParserTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>

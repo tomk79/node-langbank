@@ -1,0 +1,12 @@
+"","en","ja"
+"greet","Hi {{ name }}",
+"greet_nospace","Hi {{name}}",
+"greet_ws","Hi {{	name
+}}",
+"twice","{{ a }}-{{ b }}-{{ a }}",
+"html","Hello, <b>{{ name }}</b>",
+"braces","{ {{ name }} }} {a}",
+"types","[{{ s }}][{{ i }}][{{ x }}][{{ t }}][{{ f }}][{{ n }}][{{ missing }}]",
+"names","[{{ _a1 }}][{{ A_b }}]",
+"ja_only",,"日本語 {{ name }}"
+"{% key %}","Keys are not checked",

@@ -13,10 +13,7 @@ class LangBankException extends \RuntimeException{
 	public const FILE_READ_ERROR = 'FILE_READ_ERROR';
 	public const INVALID_SOURCE = 'INVALID_SOURCE';
 	public const INVALID_CSV = 'INVALID_CSV';
-	/** PHP版では投げない (NodeJS版と揃えるために定義している) */
-	public const CSV_PARSE_ERROR = 'CSV_PARSE_ERROR';
 	public const TEMPLATE_ERROR = 'TEMPLATE_ERROR';
-	public const CIRCULAR_REFERENCE = 'CIRCULAR_REFERENCE';
 	public const INVALID_OPTION = 'INVALID_OPTION';
 
 	/** エラーコード */

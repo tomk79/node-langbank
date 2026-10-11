@@ -10,7 +10,6 @@ export type BindData = LangBank.BindData;
 export type Key = LangBank.Key;
 export type Options = LangBank.Options;
 export type HasOptions = LangBank.HasOptions;
-export type AutoescapeStrategy = LangBank.AutoescapeStrategy;
 export type View = LangBank.View;
 export type ErrorCode = LangBank.ErrorCode;
 

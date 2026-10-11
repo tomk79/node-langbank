@@ -9,18 +9,21 @@ namespace tomk79;
  */
 class LangBank{
 
-	/** options.autoescape に指定できるエスケープの戦略 */
-	private const AUTOESCAPE_STRATEGIES = array('html', 'js', 'css', 'url', 'html_attr');
-
 	/** オプションの名前 */
-	private const OPTION_NAMES = array('bind', 'autoescape', 'twig', 'onMissing', 'fallback');
+	private const OPTION_NAMES = array('bind', 'template', 'onMissing', 'fallback');
+
+	/**
+	 * プレースホルダー ({{ name }}) か、予約した構文 ({{, {%, {#) にマッチする正規表現
+	 *
+	 * 予約した構文にマッチしたときは、1 番目のグループがない。
+	 */
+	private const PLACEHOLDER_PATTERN = '/\{\{[ \t\r\n]*([A-Za-z_][A-Za-z0-9_]*)[ \t\r\n]*\}\}|\{[\{%#]/';
 
 	private mixed $pathCsv;
 	private array $options = array();
 	private array $langDb = array();
 	private array $langList = array();
 	private array $langMap = array(); // 正規化した言語コード => 列名
-	private array $renderStack = array(); // 描画中の get() の {key, lang, bind, error}
 	private bool $langIsSet = false; // setLang() が呼ばれたか
 	public ?string $defaultLang = null;
 	public ?string $lang = null;
@@ -123,7 +126,7 @@ class LangBank{
 	 * @return string 設定された言語に対応する文字列
 	 */
 	public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ): string{
-		return $this->getFor($this->lang, $key, $bindData, $defaultValue)->text;
+		return $this->getFor($this->lang, $key, $bindData, $defaultValue);
 	}
 
 	/**
@@ -190,16 +193,9 @@ class LangBank{
 					}
 					$value = $bind;
 					break;
-				case 'autoescape':
-					if( $value === true ){
-						$value = 'html';
-					}elseif( $value !== false && !in_array($value, self::AUTOESCAPE_STRATEGIES, true) ){
-						throw new LangBankException('INVALID_OPTION', 'Option "autoescape" must be false, true, or one of: '.implode(', ', self::AUTOESCAPE_STRATEGIES).'.');
-					}
-					break;
-				case 'twig':
+				case 'template':
 					if( !is_bool($value) ){
-						throw new LangBankException('INVALID_OPTION', 'Option "twig" must be a boolean.');
+						throw new LangBankException('INVALID_OPTION', 'Option "template" must be a boolean.');
 					}
 					break;
 				case 'onMissing':
@@ -334,6 +330,11 @@ class LangBank{
 
 	/**
 	 * CSV文字列をパースする
+	 *
+	 * PHP 8.3 以降の fgetcsv($fp, 0, ',', '"', '') と同じ結果を返す。
+	 * (fgetcsv() そのものは、PHP のバージョンやロケールによって不正な CSV の結果が変わるため、
+	 * php-src の php_fgetcsv() を移植した。NodeJS版の libs/parseCsv.js と同じアルゴリズム)
+	 * 区切り文字と引用符は ASCII なので、マルチバイト文字はバイト単位で扱っても結果は同じ。
 	 */
 	private function parseCsv( $src ){
 		$src = preg_replace('/^\xEF\xBB\xBF/', '', $src);
@@ -341,16 +342,159 @@ class LangBank{
 			// CR だけで改行された CSV
 			$src = str_replace("\r", "\n", $src);
 		}
-		$fp = fopen('php://temp', 'r+');
-		fwrite($fp, $src);
-		rewind($fp);
+
+		// LF までを 1 行として (LF を含めて) 読む
+		$pos = 0;
+		$length = strlen($src);
+		$nextLine = function() use ( $src, $length, &$pos ){
+			if( $pos >= $length ){
+				return null;
+			}
+			$end = strpos($src, "\n", $pos);
+			$end = ($end === false) ? $length : $end + 1;
+			$line = substr($src, $pos, $end - $pos);
+			$pos = $end;
+			return $line;
+		};
+
 		$rtn = array();
-		// バックスラッシュはエスケープ文字として扱わない (RFC 4180)
-		while( ($row = fgetcsv($fp, 0, ',', '"', '')) !== false ){
-			$rtn[] = $row;
+		while( !is_null($line = $nextLine()) ){
+			$rtn[] = $this->parseCsvRow($line, $nextLine);
 		}
-		fclose($fp);
 		return $rtn;
+	}
+
+	/**
+	 * CSV の 1 行 (引用符の中に改行があれば、続く行も) を読んで、セルの配列を返す
+	 *
+	 * 空行は [null] を返す (fgetcsv() と同じ)。
+	 * 文字列の末尾を越えた位置の文字は '' になり、C の終端文字と同じように、区切り文字にも引用符にもならない。
+	 */
+	private function parseCsvRow( string $buf, \Closure $nextLine ): array{
+		$limit = $this->trimCsvLineEnd($buf);
+		$lineEnd = substr($buf, $limit);
+		$ptr = 0;
+		$firstField = true;
+		$row = array();
+
+		do{
+			$field = '';
+
+			$inc = ($ptr < $limit) ? 1 : 0;
+			if( $inc === 1 ){
+				// 引用符の前の空白は読み飛ばす (C ロケールの isspace())
+				$tmp = $ptr;
+				while( ($buf[$tmp] ?? '') !== ',' && ($buf[$tmp] ?? '') !== '' && strpos(" \t\n\r\v\f", ($buf[$tmp] ?? '')) !== false ){
+					$tmp ++;
+				}
+				if( ($buf[$tmp] ?? '') === '"' && $tmp < $limit ){
+					$ptr = $tmp;
+				}
+			}
+
+			if( $firstField && $ptr === $limit ){
+				// 空行
+				return array(null);
+			}
+			$firstField = false;
+
+			if( $inc !== 0 && ($buf[$ptr] ?? '') === '"' ){
+				// 引用符で囲まれたセル
+				// (エスケープ文字を使わないので、状態は 0: 通常 と 2: 直前が引用符 だけ)
+				$state = 0;
+				$ptr ++;
+				$hunk = $ptr;
+				for(;;){
+					if( $inc === 0 ){
+						if( $state === 2 ){
+							// 行末の閉じる引用符
+							$field .= substr($buf, $hunk, $ptr - 1 - $hunk);
+							$hunk = $ptr;
+							break;
+						}
+						if( $hunk !== $limit ){
+							$field .= substr($buf, $hunk, $ptr - $hunk);
+							$hunk = $ptr;
+						}
+						// 引用符の中の改行は、セルの値に含めて次の行を読む
+						$field .= $lineEnd;
+						$next = $nextLine();
+						if( is_null($next) ){
+							// 閉じていない引用符は、末尾までを 1 つのセルにする
+							if( $ptr > $limit ){
+								if( $hunk === $ptr ){
+									$hunk --;
+								}
+								$ptr --;
+							}
+							break;
+						}
+						$buf = $next;
+						$ptr = 0;
+						$hunk = 0;
+						$limit = $this->trimCsvLineEnd($buf);
+						$lineEnd = substr($buf, $limit);
+						$state = 0;
+					}elseif( $state === 2 ){
+						if( ($buf[$ptr] ?? '') !== '"' ){
+							// 閉じる引用符
+							$field .= substr($buf, $hunk, $ptr - 1 - $hunk);
+							$hunk = $ptr;
+							break;
+						}
+						// "" は " にする
+						$field .= substr($buf, $hunk, $ptr - $hunk);
+						$ptr ++;
+						$hunk = $ptr;
+						$state = 0;
+					}else{
+						if( ($buf[$ptr] ?? '') === '"' ){
+							$state = 2;
+						}
+						$ptr ++;
+					}
+					$inc = ($ptr < $limit) ? 1 : 0;
+				}
+
+				// 閉じる引用符の後ろは、次の区切り文字までをそのまま加える
+				while( $inc !== 0 && ($buf[$ptr] ?? '') !== ',' ){
+					$ptr ++;
+					$inc = ($ptr < $limit) ? 1 : 0;
+				}
+				$field .= substr($buf, $hunk, max(0, $ptr - $hunk));
+				$ptr += $inc;
+			}else{
+				// 引用符で囲まれていないセル
+				$hunk = $ptr;
+				while( $inc !== 0 && ($buf[$ptr] ?? '') !== ',' ){
+					$ptr ++;
+					$inc = ($ptr < $limit) ? 1 : 0;
+				}
+				$field = substr($buf, $hunk, $ptr - $hunk);
+				$field = substr($field, 0, $this->trimCsvLineEnd($field));
+				if( ($buf[$ptr] ?? '') === ',' ){
+					$ptr ++;
+				}
+			}
+
+			$row[] = $field;
+		}while( $inc > 0 );
+
+		return $row;
+	}
+
+	/**
+	 * 末尾の改行 (\r\n, \n, \r のいずれか 1 つ) を除いた長さを返す
+	 */
+	private function trimCsvLineEnd( string $str ): int{
+		$len = strlen($str);
+		if( $len && $str[$len - 1] === "\n" ){
+			return ($len > 1 && $str[$len - 2] === "\r") ? $len - 2 : $len - 1;
+		}
+		if( $len && $str[$len - 1] === "\r" ){
+			return $len - 1;
+		}
+		return $len;
 	}
 
 	/**
@@ -358,6 +502,7 @@ class LangBank{
 	 *
 	 * 辞書は変更しない。空のCSVなら null、そうでなければ {rows, header} を返す。
 	 * header は、列のインデックス => 言語名 (言語の列だけ)。
+	 * 訳文に予約した構文があれば、TEMPLATE_ERROR を投げる。
 	 */
 	private function prepareCsv( $csvAry ){
 		$rows = array();
@@ -393,6 +538,23 @@ class LangBank{
 		}
 		if( !count($header) ){
 			throw new LangBankException('INVALID_CSV', 'CSV header has no language columns.');
+		}
+
+		if( ($this->options['template'] ?? true) !== false ){
+			// 訳文の予約した構文は、表示する前に (読み込み時に) 見つける
+			foreach( array_slice($rows, 1) as $row ){
+				$key = ''.$row[0];
+				if( $key === '' ){
+					continue;
+				}
+				foreach( $header as $idx => $lang ){
+					$cell = ''.($row[$idx] ?? '');
+					$offset = $this->findReservedSyntax($cell);
+					if( $offset >= 0 ){
+						throw $this->reservedSyntaxError($cell, $offset, $this->describeTemplate(false, $key, $lang));
+					}
+				}
+			}
 		}
 		return (object) array('rows' => $rows, 'header' => $header);
 	}
@@ -521,26 +683,29 @@ class LangBank{
 
 	/**
 	 * 指定した言語で get() する
-	 *
-	 * 戻り値は {text, trusted}。trusted は、訳文かデフォルト値から作った文字列なら true。
-	 * (キーそのものや onMissing の戻り値は、テンプレートの中で安全な文字列として扱わない)
 	 */
-	private function getFor( ?string $lang, $key, $bindData, $defaultValue ): object{
+	private function getFor( ?string $lang, $key, $bindData, $defaultValue ): string{
 		if( is_string($bindData) && is_null($defaultValue) ){
 			// 第 2 引数の文字列はデフォルト値
 			$defaultValue = $bindData;
 			$bindData = null;
 		}
-		try{
-			return $this->getWord(''.$key, $bindData, $defaultValue, $lang);
-		}catch( LangBankException $e ){
-			$parent = end($this->renderStack);
-			if( $parent && !$parent->error ){
-				// テンプレートの中から呼ばれた場合は、外側の get() にエラーを伝える
-				$parent->error = $e;
-			}
-			throw $e;
+		$key = ''.$key;
+
+		$value = $this->findValue($key, $lang, true);
+		if( !is_null($value) ){
+			return $this->render($value, $bindData, false, $key, $lang);
 		}
+		if( is_string($defaultValue) ){
+			return $this->render($defaultValue, $bindData, true, $key, $lang);
+		}
+		if( isset($this->options['onMissing']) ){
+			$missing = call_user_func($this->options['onMissing'], $key, $lang);
+			if( is_string($missing) ){
+				return $missing;
+			}
+		}
+		return $key;
 	}
 
 	/**
@@ -551,85 +716,86 @@ class LangBank{
 	}
 
 	/**
-	 * get() の本体
+	 * プレースホルダー ({{ name }}) を、バインドデータの値で置き換える
+	 *
+	 * 1 回の走査で置き換え、差し込んだ値はもう一度処理しない。
+	 * バインドデータは、get() のデータ > options.bind の順で探す。
 	 */
-	private function getWord( $key, $bindData, $defaultValue, $lang ){
-		$path = array();
-		foreach( $this->renderStack as $frame ){
-			$path[] = $frame->key;
-		}
-		$pos = array_search($key, $path, true);
-		if( $pos !== false ){
-			$path = array_slice($path, $pos);
-			$path[] = $key;
-			throw new LangBankException('CIRCULAR_REFERENCE', 'Circular reference: '.implode(' -> ', $path));
-		}
-
-		$value = $this->findValue($key, $lang, true);
-		if( !is_null($value) ){
-			return (object) array('text' => $this->render($value, $bindData, $key, $lang), 'trusted' => true);
-		}
-		if( is_string($defaultValue) ){
-			return (object) array('text' => $this->render($defaultValue, $bindData, $key, $lang), 'trusted' => true);
-		}
-		if( isset($this->options['onMissing']) ){
-			$missing = call_user_func($this->options['onMissing'], $key, $lang);
-			if( is_string($missing) ){
-				return (object) array('text' => $missing, 'trusted' => false);
-			}
-		}
-		return (object) array('text' => $key, 'trusted' => false);
-	}
-
-	/**
-	 * Twig テンプレートを評価する
-	 */
-	private function render( $template, $bindData, $key, $lang ){
-		if( ($this->options['twig'] ?? true) === false || !preg_match('/\{[\{\%\#]/', $template) ){
+	private function render( string $template, $bindData, bool $isDefault, string $key, ?string $lang ): string{
+		if( ($this->options['template'] ?? true) === false || strpos($template, '{') === false ){
 			return $template;
 		}
 
-		// バインドデータは options.bind < 外側の get() のデータ < この get() のデータ の順で上書きする
-		$parent = end($this->renderStack);
-		$bind = $parent ? $parent->bind : ($this->options['bind'] ?? array());
+		$bind = $this->options['bind'] ?? array();
 		if( is_array($bindData) || is_object($bindData) ){
-			foreach( $bindData as $bindDataKey=>$bindDataValue ){
+			// 配列の要素、オブジェクトの公開プロパティ、Traversable の要素
+			foreach( $bindData as $bindDataKey => $bindDataValue ){
 				$bind[$bindDataKey] = $bindDataValue;
 			}
 		}
-		$data = $bind;
-		$data['_ENV'] = $this->createTemplateEnv($lang);
 
-		$autoescape = $this->options['autoescape'] ?? false;
-
-		$frame = (object) array('key' => $key, 'lang' => $lang, 'bind' => $bind, 'error' => null);
-		$this->renderStack[] = $frame;
-		try{
-			// Twig はコンパイル済みのクラスを テンプレート名とソース で識別するため、
-			// autoescape の設定ごとにテンプレート名を分ける
-			$templateName = 'langbank.'.(is_string($autoescape) ? $autoescape : 'none');
-			$loader = new \Twig\Loader\ArrayLoader(array(
-				$templateName => $template,
-			));
-			$twig = new \Twig\Environment($loader, array(
-				'autoescape' => $autoescape,
-			));
-			return $twig->render($templateName, $data);
-		}catch( \Throwable $e ){
-			if( $frame->error ){
-				// 入れ子の get() で起きたエラーは、包み直さずにそのまま投げる
-				throw $frame->error;
+		return preg_replace_callback(self::PLACEHOLDER_PATTERN, function( $matched ) use ( $template, $bind, $isDefault, $key, $lang ){
+			$name = $matched[1][0] ?? ''; // 予約した構文にマッチしたときは、グループがない
+			if( $name === '' ){
+				throw $this->reservedSyntaxError($template, $matched[0][1], $this->describeTemplate($isDefault, $key, $lang));
 			}
-			throw new LangBankException('TEMPLATE_ERROR', 'Failed to render template of key "'.$key.'" (lang: '.$lang.'): '.$e->getMessage(), $e);
-		}finally{
-			array_pop($this->renderStack);
+			return $this->toPlaceholderValue($bind[$name] ?? null, $name, $this->describeTemplate($isDefault, $key, $lang));
+		}, $template, -1, $count, PREG_OFFSET_CAPTURE);
+	}
+
+	/**
+	 * 予約した構文のうち、正しいプレースホルダーにならないものの位置 (バイト単位) を返す (なければ -1)
+	 */
+	private function findReservedSyntax( string $template ): int{
+		if( strpos($template, '{') === false ){
+			return -1;
 		}
+		preg_match_all(self::PLACEHOLDER_PATTERN, $template, $matches, PREG_SET_ORDER|PREG_OFFSET_CAPTURE);
+		foreach( $matches as $matched ){
+			if( ($matched[1][0] ?? '') === '' ){
+				return $matched[0][1];
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * 訳文やデフォルト値のエラーメッセージ用に、場所を説明する
+	 */
+	private function describeTemplate( bool $isDefault, string $key, ?string $lang ): string{
+		return ($isDefault ? 'the default value' : 'the word').' of key "'.$key.'" (lang: '.$lang.')';
+	}
+
+	/**
+	 * 予約した構文のエラー
+	 */
+	private function reservedSyntaxError( string $template, int $offset, string $where ): LangBankException{
+		return new LangBankException('TEMPLATE_ERROR', 'Unsupported syntax in '.$where.': "'.mb_substr(substr($template, $offset), 0, 20).'". Only placeholders like {{ name }} are supported.');
+	}
+
+	/**
+	 * プレースホルダーに差し込む値を文字列にする
+	 */
+	private function toPlaceholderValue( mixed $value, string $name, string $where ): string{
+		if( is_null($value) ){
+			return '';
+		}
+		if( is_string($value) ){
+			return $value;
+		}
+		if( is_int($value) || is_float($value) ){
+			return (string) $value;
+		}
+		if( is_bool($value) ){
+			return $value ? '1' : '';
+		}
+		throw new LangBankException('TEMPLATE_ERROR', 'Unsupported type of the value "'.$name.'" ('.get_debug_type($value).') in '.$where.'.');
 	}
 
 	/**
 	 * 言語を固定したビューを作る
 	 *
-	 * withLang() と _ENV で使う。(サブクラスでオーバーライドされた withLang() を経由しない)
+	 * withLang() で使う。(サブクラスでオーバーライドされた withLang() を経由しない)
 	 */
 	private function createView( ?string $lang ): LangBankView{
 		// LangBankView のコンストラクタは private なので、そのクラスのスコープに束縛したクロージャで生成する
@@ -639,7 +805,7 @@ class LangBank{
 		}, null, LangBankView::class);
 		return $factory($lang, array(
 			'get' => function( $key, $bindData, $defaultValue ) use ( $lang ){
-				return $this->getFor($lang, $key, $bindData, $defaultValue)->text;
+				return $this->getFor($lang, $key, $bindData, $defaultValue);
 			},
 			'has' => function( $key, $options ) use ( $lang ){
 				return $this->hasFor($lang, $key, $options);
@@ -654,50 +820,6 @@ class LangBank{
 				return $this->langList;
 			},
 		));
-	}
-
-	/**
-	 * テンプレートに _ENV として渡す、読み取り専用のオブジェクト
-	 *
-	 * Twig は `_ENV.lang` を getLang() で解決する。
-	 * autoescape が有効なら、訳文やデフォルト値から作った get() の結果を安全な文字列 (\Twig\Markup) で返し、
-	 * 二重にエスケープされないようにする。キーそのものや onMissing の戻り値は、外側のテンプレートでエスケープさせる。
-	 * (無名クラスは serialize() できないため、プロパティには保存しない)
-	 */
-	private function createTemplateEnv( $lang ){
-		$getFn = function( $key, $bindData, $defaultValue ) use ( $lang ){
-			return $this->getFor($lang, $key, $bindData, $defaultValue);
-		};
-		return new class($this->createView($lang), $getFn, ($this->options['autoescape'] ?? false) !== false){
-			private $view;
-			private $getFn;
-			private $markup;
-			public function __construct( $view, $getFn, $markup ){
-				$this->view = $view;
-				$this->getFn = $getFn;
-				$this->markup = $markup;
-			}
-			public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ){
-				$result = ($this->getFn)($key, $bindData, $defaultValue);
-				return ($this->markup && $result->trusted) ? new \Twig\Markup($result->text, 'UTF-8') : $result->text;
-			}
-			public function has( string|int $key, ?array $options = null ){
-				return $this->view->has($key, $options);
-			}
-			public function resolveLang( ...$args ){
-				// 引数の省略と null を区別するため、引数をそのまま渡す
-				return $this->view->resolveLang(...$args);
-			}
-			public function getLang(){
-				return $this->view->getLang();
-			}
-			public function getDefaultLang(){
-				return $this->view->getDefaultLang();
-			}
-			public function getLangList(){
-				return $this->view->getLangList();
-			}
-		};
 	}
 
 }

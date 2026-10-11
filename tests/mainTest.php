@@ -8,7 +8,7 @@ class mainTest extends PHPUnit\Framework\TestCase{
 
 	public function setup() : void{
 		mb_internal_encoding('UTF-8');
-		$this->listCsv = __DIR__.'/testdata/list_twig.csv';
+		$this->listCsv = __DIR__.'/testdata/list.csv';
 		$this->csvCode = '"","en","ja","anylang"'."\n".'"goodmorning","Good Morning!","おはよう！","good morning in anylang"'."\n".'"helloworld","Hello World","こんにちわ世界","helloworld in anylang"';
 	}
 
@@ -86,9 +86,6 @@ class mainTest extends PHPUnit\Framework\TestCase{
 
 		// bind test
 		$this->assertSame($lb->get('bind1'), 'test bind test 1');
-		$this->assertSame($lb->get('bind2'), 'ja');
-		$this->assertSame($lb->get('bind3'), 'en');
-		$this->assertSame($lb->get('bind4'), 'こんにちわ');
 
 		$this->assertSame($lb->get('bind1', (array) array("test1" => "local bind test 1")), 'test local bind test 1');
 		$this->assertSame($lb->get('bind1', (object) array("test1" => "local bind test 1")), 'test local bind test 1');
@@ -237,12 +234,34 @@ class mainTest extends PHPUnit\Framework\TestCase{
 			new tomk79\LangBank('""'."\n".'"k"');
 		}, 'INVALID_CSV');
 
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/escape.csv');
-		$e = $this->assertLangBankError(function() use ($lb){
-			$lb->get('bad');
+		// 予約した構文は読み込み時に TEMPLATE_ERROR
+		$e = $this->assertLangBankError(function(){
+			new tomk79\LangBank('"","en","ja"'."\n".'"ok","OK",""'."\n".'"bad","OK","{% if x %}"'."\n");
 		}, 'TEMPLATE_ERROR');
-		$this->assertStringContainsString('bad', $e->getMessage());
-		$this->assertNotNull($e->getPrevious());
+		$this->assertSame('Unsupported syntax in the word of key "bad" (lang: ja): "{% if x %}". Only placeholders like {{ name }} are supported.', $e->getMessage());
+		$lb = new tomk79\LangBank($this->listCsv);
+		$this->assertLangBankError(function() use ($lb){
+			$lb->load(array(array('', 'en'), array('bad', '{{ a.b }}')));
+		}, 'TEMPLATE_ERROR');
+		$this->assertFalse($lb->has('bad'));
+
+		// 予約した構文のデフォルト値は get() で TEMPLATE_ERROR
+		$lb->setLang('ja');
+		$e = $this->assertLangBankError(function() use ($lb){
+			$lb->get('nokey', array('name' => 'x'), '{# comment #}');
+		}, 'TEMPLATE_ERROR');
+		$this->assertSame('Unsupported syntax in the default value of key "nokey" (lang: ja): "{# comment #}". Only placeholders like {{ name }} are supported.', $e->getMessage());
+		$this->assertSame('こんにちわ', $lb->get('hello', null, '{% x %}'));
+
+		// メッセージは文字の途中で切らない
+		$e = $this->assertLangBankError(function(){
+			new tomk79\LangBank(array(array('', 'en'), array('k', 'あ{{ いいいいいいいいいいいいいいいいいいいいい }}')));
+		}, 'TEMPLATE_ERROR');
+		$this->assertStringContainsString('"{{ いいいいいいいいいいいいいいいいい"', $e->getMessage());
+
+		// 不正な CSV でもエラーにしない (NodeJS版と同じ規則で読む)
+		$lb = new tomk79\LangBank('"","en"'."\n".'"k","v'."\n".'"k2","v2"');
+		$this->assertSame(array('k' => array('en' => "v\nk2\"")), $lb->getList());
 	}
 
 	/**
@@ -263,10 +282,23 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('こんにちわ', $lb->get('hello'));
 		$this->assertSame(array(array('undefinedKey', 'ja'), array('no-en1', 'ja')), $log);
 
+		// onMissing の戻り値は置き換えない
 		$lb = new tomk79\LangBank($this->listCsv, array(
-			'onMissing' => function($key){ return '{{ '.$key.' }}'; },
+			'onMissing' => function($key){ return '{{ '.$key.' }} {% x %}'; },
 		));
-		$this->assertSame('{{ undefinedKey }}', $lb->get('undefinedKey'));
+		$this->assertSame('{{ undefinedKey }} {% x %}', $lb->get('undefinedKey', array('undefinedKey' => 'X')));
+
+		// onMissing が投げた例外は、そのまま投げる
+		$boom = new \Exception('boom');
+		$lb = new tomk79\LangBank($this->listCsv, array(
+			'onMissing' => function() use ($boom){ throw $boom; },
+		));
+		try{
+			$lb->get('nokey');
+			$this->fail('Exception expected.');
+		}catch( \Exception $e ){
+			$this->assertSame($boom, $e);
+		}
 	}
 
 	/**
@@ -290,31 +322,38 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
-	 * エラーの後も描画中の状態が残らない
+	 * プレースホルダーの値の型
 	 */
-	public function testStateAfterError(){
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/env.csv', array('bind' => array('name' => 'Global')));
-		$this->assertLangBankError(function() use ($lb){
-			$lb->get('loop_a', array('name' => 'Tom'));
-		}, 'CIRCULAR_REFERENCE');
-		$this->assertSame('Hello, Global Welcome!', $lb->get('welcome'));
-		$this->assertLangBankError(function() use ($lb){
-			$lb->get('outer', array('name' => 'Tom'));
-		}, 'TEMPLATE_ERROR');
-		$this->assertSame('Hello, Global / Hello, Global', $lb->get('twice'));
-	}
-
-	/**
-	 * _ENV からファイルを読み込めない
-	 */
-	public function testEnvCannotLoad(){
-		$lb = new tomk79\LangBank('"","en"'."\n".'"x","{{ _ENV.load(path) }}"'."\n");
-		try{
-			$lb->get('x', array('path' => __DIR__.'/testdata/merge_b.csv'));
-		}catch( \Throwable $e ){
+	public function testPlaceholderValueTypes(){
+		$lb = new tomk79\LangBank('"","en"'."\n".'"k","[{{ x }}]"'."\n");
+		$stringable = new class{ public function __toString(){ return 'S'; } };
+		foreach( array(array(), array('a'), new \stdClass(), $stringable, fopen('php://memory', 'r')) as $value ){
+			$e = $this->assertLangBankError(function() use ($lb, $value){
+				$lb->get('k', array('x' => $value));
+			}, 'TEMPLATE_ERROR');
+			$this->assertStringContainsString('Unsupported type of the value "x"', $e->getMessage());
 		}
-		$this->assertSame(array('en'), $lb->getLangList());
-		$this->assertFalse($lb->has('onlyb'));
+		// 数値は (string) と同じ
+		$this->assertSame('[0.3]', $lb->get('k', array('x' => 0.1 + 0.2)));
+		$this->assertSame('[1.0E+20]', $lb->get('k', array('x' => 1e20)));
+		$this->assertSame('[]', $lb->get('k', array('x' => null)));
+
+		// options.bind の値は、使うときに調べる
+		$lb = new tomk79\LangBank('"","en"'."\n".'"k","[{{ x }}]"'."\n".'"other","[{{ y }}]"'."\n", array('bind' => array('x' => array())));
+		$this->assertSame('[]', $lb->get('other'));
+		$this->assertLangBankError(function() use ($lb){ $lb->get('k'); }, 'TEMPLATE_ERROR');
+
+		// バインドデータは、配列の要素、オブジェクトの公開プロパティ、Traversable の要素
+		$lb = new tomk79\LangBank('"","en"'."\n".'"k","[{{ x }}][{{ y }}]"'."\n");
+		$obj = new class{ public $x = 'pub'; protected $y = 'protected'; };
+		$this->assertSame('[pub][]', $lb->get('k', $obj));
+		$this->assertSame('[gen][]', $lb->get('k', (function(){ yield 'x' => 'gen'; })()));
+		$this->assertSame('[][]', $lb->get('k', new \ArrayObject(array())));
+
+		// getList() と has() は訳文をそのまま扱う
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/placeholders.csv');
+		$this->assertSame('Hi {{ name }}', $lb->getList()['greet']['en']);
+		$this->assertTrue($lb->has('greet'));
 	}
 
 	/**
@@ -376,9 +415,11 @@ class mainTest extends PHPUnit\Framework\TestCase{
 			array('onmissing' => function(){}),
 			array('x'),
 			array('bind' => 'x'),
-			array('autoescape' => 'xml'),
-			array('autoescape' => 1),
-			array('twig' => 'false'),
+			array('template' => 'false'),
+			array('template' => 0),
+			array('twig' => false),
+			array('autoescape' => 'html'),
+			array('autoescape' => false),
 			array('onMissing' => 'no_such_function'),
 			array('fallback' => 'ja'),
 			array('fallback' => array('ja' => 1)),
@@ -401,14 +442,14 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		}
 
 		// null は指定なしとして扱う
-		$lb = new tomk79\LangBank($this->listCsv, array('bind' => null, 'autoescape' => null, 'twig' => null, 'onMissing' => null, 'fallback' => null));
+		$lb = new tomk79\LangBank($this->listCsv, array('bind' => null, 'template' => null, 'onMissing' => null, 'fallback' => null));
 		$this->assertSame('undefinedKey', $lb->get('undefinedKey'));
 		$lb = new tomk79\LangBank($this->listCsv, null);
 		$this->assertSame('Hello', $lb->get('hello'));
 
-		// autoescape: true は html
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/escape.csv', array('autoescape' => true));
-		$this->assertSame('Hi &lt;b&gt;', $lb->get('greet', array('name' => '<b>')));
+		// template: true は既定と同じ
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/placeholders.csv', array('template' => true));
+		$this->assertSame('Hi Tom', $lb->get('greet', array('name' => 'Tom')));
 
 		// fallback の値には文字列も書ける
 		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv', array('fallback' => array('zh-HK' => 'zh-Hant')));
@@ -438,15 +479,11 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$obj->name = 'Changed';
 		$this->assertSame('[Obj]', $lb->get('k'));
 
-		// ネストしたオブジェクトは共有し、ネストした配列は値としてコピーする
-		$csv = '"","en"'."\n".'"k","[{{ o.name }}/{{ a.name }}]"'."\n";
-		$nested = new \stdClass();
-		$nested->name = 'O1';
-		$bind = array('o' => $nested, 'a' => array('name' => 'A1'));
+		// 構築した後に元の配列を書き換えても影響しない
+		$bind = array('name' => 'A1');
 		$lb = new tomk79\LangBank($csv, array('bind' => $bind));
-		$nested->name = 'O2';
-		$bind['a']['name'] = 'A2';
-		$this->assertSame('[O2/A1]', $lb->get('k'));
+		$bind['name'] = 'A2';
+		$this->assertSame('[A1]', $lb->get('k'));
 
 		// options 全体の null は指定なし
 		$lb = new tomk79\LangBank($csv, null);
@@ -518,27 +555,18 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
-	 * _ENV.get() が返した onMissing の戻り値はエスケープする
-	 */
-	public function testEnvOnMissingIsEscaped(){
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/escape.csv', array(
-			'autoescape' => 'html',
-			'onMissing' => function($key){ return '<i>'.$key.'</i>'; },
-		));
-		$this->assertSame('[&lt;i&gt;x&lt;/i&gt;]', $lb->get('dynamic', array('name' => 'x')));
-		$this->assertSame('<i>nope</i>', $lb->get('nope'));
-	}
-
-	/**
 	 * エラーコードの定数
 	 */
 	public function testErrorCodeConstants(){
 		foreach( array(
 			'FILE_NOT_FOUND', 'FILE_READ_ERROR', 'INVALID_SOURCE', 'INVALID_CSV',
-			'CSV_PARSE_ERROR', 'TEMPLATE_ERROR', 'CIRCULAR_REFERENCE', 'INVALID_OPTION',
+			'TEMPLATE_ERROR', 'INVALID_OPTION',
 		) as $code ){
 			$this->assertSame($code, constant('tomk79\LangBankException::'.$code));
 		}
+		// v2 で廃止したコード
+		$this->assertFalse(defined('tomk79\LangBankException::CSV_PARSE_ERROR'));
+		$this->assertFalse(defined('tomk79\LangBankException::CIRCULAR_REFERENCE'));
 	}
 
 	/**
@@ -567,25 +595,23 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		// 言語なしはデフォルト言語
 		$this->assertNull($lb->withLang(null)->getLang());
 		$this->assertSame('Hello', $lb->withLang(null)->get('hello'));
-		$this->assertSame('/en/', (new tomk79\LangBank(__DIR__.'/testdata/env.csv'))->withLang(null)->get('nokey', null, '{{ _ENV.lang }}/{{ _ENV.defaultLang }}/'));
 
-		// ビューから描画すると _ENV はビューの言語
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/env.csv');
-		$this->assertSame('ja/en/ja/en/yes', $lb->withLang('ja')->get('env'));
-		$this->assertSame('en/en/en/en/yes', $lb->get('env'));
-		$this->assertSame('Hello, Tom Welcome!', $lb->withLang('ja')->get('welcome', array('name' => 'Tom')));
+		// ビューでもプレースホルダーを置き換える
+		$lb = new tomk79\LangBank(__DIR__.'/testdata/placeholders.csv', array('bind' => array('name' => 'Global')));
+		$this->assertSame('日本語 Global', $lb->withLang('ja')->get('ja_only'));
+		$this->assertSame('日本語 太郎', $lb->withLang('ja')->get('ja_only', array('name' => '太郎')));
+		$this->assertSame('[x]', $lb->withLang('ja')->get('nokey', array('name' => 'x'), '[{{ name }}]'));
+		$this->assertLangBankError(function() use ($lb){
+			$lb->withLang('ja')->get('nokey', null, '{% x %}');
+		}, 'TEMPLATE_ERROR');
 
-		// onMissing に言語を渡し、循環参照を検出する
+		// onMissing に言語を渡す
 		$log = array();
-		$lb = new tomk79\LangBank(__DIR__.'/testdata/env.csv', array(
+		$lb = new tomk79\LangBank($this->listCsv, array(
 			'onMissing' => function($key, $lang) use (&$log){ $log[] = $key.':'.$lang; },
 		));
 		$this->assertSame('nope', $lb->withLang('fr')->get('nope'));
 		$this->assertSame(array('nope:fr'), $log);
-		$this->assertLangBankError(function() use ($lb){
-			$lb->withLang('ja')->get('loop_a');
-		}, 'CIRCULAR_REFERENCE');
-		$this->assertSame('Hello,  Welcome!', $lb->withLang('ja')->get('welcome'));
 	}
 
 	/**
@@ -640,7 +666,7 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
-	 * ビューと _ENV の resolveLang() と getLangList()
+	 * ビューの resolveLang() と getLangList()
 	 */
 	public function testViewResolveLangAndLangList(){
 		$lb = new tomk79\LangBank(__DIR__.'/testdata/regional.csv');
@@ -655,10 +681,6 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		// 呼び出した時点の辞書を反映する
 		$lb->load('"","fr"'."\n".'"hello","Bonjour"');
 		$this->assertSame(array('en', 'en-US', 'ja', 'zh-Hant', 'pt', 'fr'), $view->getLangList());
-
-		$tpl = '{{ _ENV.resolveLang() }}/{{ _ENV.resolveLang("pt_BR") }}/{{ _ENV.resolveLang(null) is null ? "null" : "x" }}/{{ _ENV.getLangList()|join(",") }}';
-		$this->assertSame('en/pt/null/en,en-US,ja,zh-Hant,pt,fr', $view->get('nokey', null, $tpl));
-		$this->assertSame('ja/pt/null/en,en-US,ja,zh-Hant,pt,fr', $lb->get('nokey', null, $tpl));
 	}
 
 	/**
@@ -692,6 +714,7 @@ class mainTest extends PHPUnit\Framework\TestCase{
 			array(__DIR__.'/testdata/regional.csv', array(array('key'), array('k', 'v'))),
 			array(__DIR__.'/testdata/regional.csv', array(array('', 'en'), 'x')),
 			array(__DIR__.'/testdata/regional.csv', array(array('', 'en'), array(array()))),
+			array(__DIR__.'/testdata/regional.csv', '"","en"'."\n".'"k","{% broken %}"'),
 			array(__DIR__.'/testdata/regional.csv', 1),
 		) as $src ){
 			try{
@@ -747,7 +770,7 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	 * キーは文字列か整数に限る
 	 */
 	public function testKeyType(){
-		$lb = new tomk79\LangBank('"","en"'."\n".'"123","num"'."\n".'"t_get","{{ _ENV.get(nokey) }}"'."\n".'"t_has","{{ _ENV.has(nokey) }}"'."\n".'"t_num","{{ _ENV.get(123) }}"'."\n");
+		$lb = new tomk79\LangBank('"","en"'."\n".'"123","num"'."\n");
 		$view = $lb->withLang('en');
 		foreach( array(
 			fn() => $lb->get(null),
@@ -765,47 +788,6 @@ class mainTest extends PHPUnit\Framework\TestCase{
 		$this->assertSame('num', $lb->get(123));
 		$this->assertTrue($lb->has(123));
 		$this->assertSame('', $lb->get(''));
-		$this->assertSame('num', $lb->get('t_num'));
-
-		// テンプレートの中の型エラーは TEMPLATE_ERROR になる
-		foreach( array('t_get', 't_has') as $key ){
-			$e = $this->assertLangBankError(function() use ($lb, $key){
-				$lb->get($key);
-			}, 'TEMPLATE_ERROR');
-			$this->assertStringContainsString('must be of type string|int', $e->getMessage());
-		}
-	}
-
-	/**
-	 * テンプレートの中のエラーの扱い
-	 */
-	public function testErrorsInTemplate(){
-		// 未定義の変数は default('') で空文字のキーにできる
-		$lb = new tomk79\LangBank('"","en"'."\n".'"t","[{{ _ENV.get(nokey|default(\'\')) }}]"'."\n");
-		$this->assertSame('[]', $lb->get('t'));
-
-		// onMissing が投げた例外は、外側のキーの TEMPLATE_ERROR に包む
-		$boom = new \Exception('boom');
-		$lb = new tomk79\LangBank('"","en"'."\n".'"outer","{{ _ENV.get(\'inner\') }}"'."\n", array(
-			'onMissing' => function() use ($boom){ throw $boom; },
-		));
-		$e = $this->assertLangBankError(function() use ($lb){
-			$lb->get('outer');
-		}, 'TEMPLATE_ERROR');
-		$this->assertStringContainsString('key "outer"', $e->getMessage());
-		$found = false;
-		for( $prev = $e->getPrevious(); $prev; $prev = $prev->getPrevious() ){
-			$found = $found || $prev === $boom;
-		}
-		$this->assertTrue($found, 'The original exception is in the chain of getPrevious().');
-
-		// テンプレートの外では、そのまま投げる
-		try{
-			$lb->get('inner');
-			$this->fail('Exception expected.');
-		}catch( \Exception $e ){
-			$this->assertSame($boom, $e);
-		}
 	}
 
 	/**
@@ -822,18 +804,17 @@ class mainTest extends PHPUnit\Framework\TestCase{
 	}
 
 	/**
-	 * _ENV は、サブクラスでオーバーライドした withLang() を経由しない
+	 * ビューは、サブクラスでオーバーライドしたメソッドを経由しない
 	 */
-	public function testEnvDoesNotUseOverriddenWithLang(){
-		$lb = new class(__DIR__.'/testdata/list_twig.csv') extends tomk79\LangBank{
+	public function testViewDoesNotUseOverriddenMethods(){
+		$lb = new class(__DIR__.'/testdata/list.csv') extends tomk79\LangBank{
 			public int $calls = 0;
-			public function withLang( ?string $lang ): tomk79\LangBankView{
+			public function get( string|int $key, mixed $bindData = null, mixed $defaultValue = null ): string{
 				$this->calls ++;
-				return parent::withLang('anylang');
+				return 'overridden';
 			}
 		};
-		$lb->setLang('ja');
-		$this->assertSame('ja/こんにちわ', $lb->get('nokey', null, '{{ _ENV.getLang() }}/{{ _ENV.get("hello") }}'));
+		$this->assertSame('こんにちわ', $lb->withLang('ja')->get('hello'));
 		$this->assertSame(0, $lb->calls);
 	}
 

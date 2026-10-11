@@ -21,14 +21,20 @@ class sharedCasesTest extends PHPUnit\Framework\TestCase{
 	 * @dataProvider casesProvider
 	 */
 	public function testSharedCase($c){
-		$source = array();
-		foreach( (is_array($c['source']) ? $c['source'] : array($c['source'])) as $file ){
-			$source[] = __DIR__.'/testdata/'.$file;
+		// rows はパース済みの CSV 配列。source は testdata のファイル名
+		if( array_key_exists('rows', $c) ){
+			$source = $c['rows'];
+		}else{
+			$source = array();
+			foreach( (is_array($c['source']) ? $c['source'] : array($c['source'])) as $file ){
+				$source[] = __DIR__.'/testdata/'.$file;
+			}
 		}
-		$lb = new tomk79\LangBank($source, $c['options'] ?? array());
-		$lb->setLang($c['lang']);
 
-		$get = function() use ($lb, $c){
+		// 読み込み時のエラーも検査するため、読み込みから get() までを 1 つの関数にする
+		$get = function() use ($source, $c){
+			$lb = new tomk79\LangBank($source, $c['options'] ?? array());
+			$lb->setLang($c['lang']);
 			if( array_key_exists('args', $c) ){
 				return $lb->get($c['key'], ...$c['args']);
 			}elseif( array_key_exists('bind', $c) && array_key_exists('default', $c) ){

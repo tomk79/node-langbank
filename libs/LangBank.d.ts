@@ -9,20 +9,10 @@
 declare class LangBank {
 	/**
 	 * @param src 読み込み元 (ファイルパス, CSV 文字列, パース済みの CSV 配列, またはそれらの配列)。省略すると空の辞書
-	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合や、オプションが不正な場合
-	 * @throws {TypeError} options が null, undefined, 配列以外のオブジェクトのいずれでもない場合 (配列は TypeError。関数は非推奨のコールバック)
+	 * @throws {LangBank.LangBankError} 読み込みに失敗した場合や、オプションが不正な場合、訳文に予約した構文がある場合 (TEMPLATE_ERROR)
+	 * @throws {TypeError} options が null, undefined, 配列以外のオブジェクトのいずれでもない場合 (配列や関数も TypeError)。第 3 引数 (v1 のコールバック) を渡した場合
 	 */
 	constructor(src?: LangBank.Source, options?: LangBank.Options | null);
-	/**
-	 * @deprecated 初期化は同期で終わるので、コールバックは不要。互換のために残している
-	 * @param callback 初期化後に非同期で呼ばれる
-	 */
-	constructor(src: LangBank.Source, callback: (() => void) | null);
-	/**
-	 * @deprecated 初期化は同期で終わるので、コールバックは不要。互換のために残している
-	 * @param callback 初期化後に非同期で呼ばれる
-	 */
-	constructor(src: LangBank.Source, options: LangBank.Options | null | undefined, callback: (() => void) | null);
 
 	/** 現在の言語 (getLang() と同じ) */
 	readonly lang: string | null;
@@ -57,7 +47,9 @@ declare class LangBank {
 	 *
 	 * 第 2 引数が文字列で、第 3 引数が null か undefined なら、第 2 引数をデフォルト値として扱う。
 	 * 訳文が見つからず (フォールバックを含む)、デフォルト値もなければ、onMissing の戻り値、またはキーを返す。
+	 * 訳文とデフォルト値のプレースホルダー ({{ name }}) は、バインドデータの値で置き換える。
 	 * @throws {TypeError} キーが文字列でも数値でもない場合
+	 * @throws {LangBank.LangBankError} デフォルト値に予約した構文がある場合や、差し込む値の型が対応していない場合 (TEMPLATE_ERROR)
 	 */
 	get(key: LangBank.Key): string;
 	get(key: LangBank.Key, defaultValue: string): string;
@@ -88,18 +80,20 @@ declare namespace LangBank {
 	type CsvCell = string | number | boolean | null | undefined;
 	type CsvArray = Array<CsvCell[] | null | undefined>;
 	type Source = string | CsvArray | Array<string | CsvArray | null | undefined> | null | undefined;
+	/**
+	 * プレースホルダーに差し込むデータ
+	 *
+	 * 値は文字列, 数値, 真偽値 (true は '1', false は ''), null, undefined (どちらも '')。それ以外の型は TEMPLATE_ERROR。
+	 */
 	type BindData = { [key: string]: any };
 	/** キー (数値は文字列にして探す) */
 	type Key = string | number;
-	type AutoescapeStrategy = 'html' | 'js' | 'css' | 'url' | 'html_attr';
 
 	interface Options {
 		/** すべての get() でバインドするデータ */
 		bind?: BindData | null;
-		/** HTML エスケープの戦略 (既定: false。true は 'html') */
-		autoescape?: boolean | AutoescapeStrategy | null;
-		/** false にすると Twig で評価しない (既定: true) */
-		twig?: boolean | null;
+		/** false にすると、プレースホルダーを置き換えず、予約した構文も調べない (既定: true) */
+		template?: boolean | null;
 		/**
 		 * 訳文が見つからず (フォールバックを含む)、デフォルト値もない場合の戻り値を返す (文字列以外を返すとキーを使う)
 		 *
@@ -115,7 +109,7 @@ declare namespace LangBank {
 		exact?: boolean | null;
 	}
 
-	/** withLang() が返す、言語を固定したビュー。テンプレートの _ENV と同じ形 */
+	/** withLang() が返す、言語を固定したビュー */
 	interface View {
 		readonly lang: string | null;
 		readonly defaultLang: string | null;
@@ -140,9 +134,7 @@ declare namespace LangBank {
 		| 'FILE_READ_ERROR'
 		| 'INVALID_SOURCE'
 		| 'INVALID_CSV'
-		| 'CSV_PARSE_ERROR'
 		| 'TEMPLATE_ERROR'
-		| 'CIRCULAR_REFERENCE'
 		| 'INVALID_OPTION';
 
 	class LangBankError extends Error {
@@ -154,9 +146,7 @@ declare namespace LangBank {
 		static readonly FILE_READ_ERROR: 'FILE_READ_ERROR';
 		static readonly INVALID_SOURCE: 'INVALID_SOURCE';
 		static readonly INVALID_CSV: 'INVALID_CSV';
-		static readonly CSV_PARSE_ERROR: 'CSV_PARSE_ERROR';
 		static readonly TEMPLATE_ERROR: 'TEMPLATE_ERROR';
-		static readonly CIRCULAR_REFERENCE: 'CIRCULAR_REFERENCE';
 		static readonly INVALID_OPTION: 'INVALID_OPTION';
 	}
 }

@@ -6,13 +6,15 @@ describe('Shared cases (JS/PHP 共通)', function() {
 
 	cases.forEach(function(c) {
 		it(c.name, function() {
-			var source = (Array.isArray(c.source) ? c.source : [c.source]).map(function(file){
+			// rows はパース済みの CSV 配列。source は testdata のファイル名
+			var source = ('rows' in c) ? c.rows : (Array.isArray(c.source) ? c.source : [c.source]).map(function(file){
 				return __dirname + '/testdata/' + file;
 			});
-			var lb = new LangBank(source, c.options || {});
-			lb.setLang(c.lang);
 
+			// 読み込み時のエラーも検査するため、読み込みから get() までを 1 つの関数にする
 			function get(){
+				var lb = new LangBank(source, c.options || {});
+				lb.setLang(c.lang);
 				if( 'args' in c ){
 					return lb.get.apply(lb, [c.key].concat(c.args));
 				}else if( 'bind' in c && 'default' in c ){
