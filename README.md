@@ -445,7 +445,7 @@ v2.x is the current version. v1.0.x receives security fixes only.
 
 ## Change Log
 
-### langbank v2.0.0 (リリース前)
+### langbank v2.0.0 (2026-10-11)
 
 - 破壊的な変更を含みます。 "Migration from v1" を参照してください。
 - Twig と csv への依存をなくした。依存するパッケージはない。
@@ -456,7 +456,6 @@ v2.x is the current version. v1.0.x receives security fixes only.
 - CSV のパーサーを自前で実装した。NodeJS版・PHP版ともに、PHP 8.3 以降の `fgetcsv()` と同じ規則で読む (PHP のバージョンやロケールによらない)。NodeJS版は、不正な CSV でもエラーにしなくなった。エラーコード `CSV_PARSE_ERROR` を廃止した。
 - NodeJS版: 読み込み時に Node.js の組み込みモジュールやグローバル (`fs`, `Buffer` など) を参照しないようにした。ポリフィルなしでブラウザ向けにバンドルできる。
 - NodeJS版: 非推奨だったコンストラクタのコールバックを廃止した。
-- v1.0.x には、セキュリティ修正だけを続ける。
 
 
 ### langbank v1.0.0 (2026-10-10)
