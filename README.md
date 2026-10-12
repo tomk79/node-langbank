@@ -446,7 +446,7 @@ v2.x is the current version. v1.0.x receives security fixes only.
 
 ## Change Log
 
-### langbank v2.0.1 (リリース日未定)
+### langbank v2.0.1 (2026-10-12)
 
 - NodeJS版: 型定義の `CsvArray` と `Source` が、読み取り専用の配列 (`ReadonlyArray`) も受け取るようにした。LangBank は渡された配列を書き換えないことを README に明記した。
 
